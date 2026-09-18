@@ -14,12 +14,14 @@ import {
   ExternalLink,
   XCircle,
   Sparkles,
+  Check,
+  Search,
 } from "lucide-react";
 import { initializeLiff, closeLiff } from "@/lib/liff";
 import { supabase } from "@/lib/supabaseClient";
 import { Equipment, UserProfile } from "@/lib/types";
 
-// Fallback demo equipment when Supabase credentials are not yet populated
+// รายการอุปกรณ์จำลอง (สำหรับกรณีที่ยังไม่ได้ใส่ Key หรือข้อมูลใน Supabase ยังว่าง)
 const FALLBACK_EQUIPMENTS: Equipment[] = [
   {
     id: "e1000000-0000-0000-0000-000000000001",
@@ -63,31 +65,40 @@ const FALLBACK_EQUIPMENTS: Equipment[] = [
   },
   {
     id: "e6000000-0000-0000-0000-000000000006",
-    name: "Epson Full HD Mobile Projector (Out of Stock)",
+    name: "Epson Full HD Mobile Projector (สินค้าหมด)",
     image_url:
       "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=600&q=80",
     total_stock: 2,
     available_stock: 0,
   },
+  {
+    id: "e7000000-0000-0000-0000-000000000007",
+    name: "Anker 12-in-1 USB-C Docking Station",
+    image_url:
+      "https://images.unsplash.com/photo-1622445262464-84b14e4b7501?auto=format&fit=crop&w=600&q=80",
+    total_stock: 5,
+    available_stock: 5,
+  },
 ];
 
 export default function BorrowPage() {
-  // LIFF & Profile States
+  // สถานะ LIFF & โปรไฟล์ผู้ใช้
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isMock, setIsMock] = useState(false);
   const [isLiffLoading, setIsLiffLoading] = useState(true);
 
-  // Form States
+  // สถานะฟอร์ม
   const [equipments, setEquipments] = useState<Equipment[]>([]);
   const [isEquipmentsLoading, setIsEquipmentsLoading] = useState(true);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [department, setDepartment] = useState("");
   const [borrowDate, setBorrowDate] = useState(() => {
     const today = new Date();
     return today.toISOString().split("T")[0];
   });
 
-  // Submission States
+  // สถานะการบันทึกข้อมูล
   const [submitting, setSubmitting] = useState(false);
   const [successData, setSuccessData] = useState<{
     message: string;
@@ -97,7 +108,7 @@ export default function BorrowPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
 
-  // 1. Initialize LIFF on Mount with graceful mock fallback
+  // 1. เริ่มต้นระบบ LINE LIFF เมื่อโหลดหน้าเว็บ
   useEffect(() => {
     async function setupLiff() {
       try {
@@ -113,7 +124,7 @@ export default function BorrowPage() {
     setupLiff();
   }, []);
 
-  // 2. Fetch Equipments from Supabase via Anon Client
+  // 2. ดึงรายการอุปกรณ์จาก Supabase ผ่าน Public Anon Client
   useEffect(() => {
     async function fetchEquipments() {
       setIsEquipmentsLoading(true);
@@ -125,14 +136,14 @@ export default function BorrowPage() {
 
         if (error || !data || data.length === 0) {
           console.info(
-            "[Supabase] Could not fetch equipments from database (empty or unconfigured). Using fallback IT equipment catalogue."
+            "[Supabase] ไม่พบข้อมูลหรือยังไม่ได้ใส่ Key ใช้งานชุดข้อมูลจำลองสำหรับทดสอบ"
           );
           setEquipments(FALLBACK_EQUIPMENTS);
         } else {
           setEquipments(data);
         }
       } catch (err) {
-        console.warn("[Supabase] Query error, falling back to local dataset:", err);
+        console.warn("[Supabase] เกิดข้อผิดพลาด ใช้ชุดข้อมูลจำลอง:", err);
         setEquipments(FALLBACK_EQUIPMENTS);
       } finally {
         setIsEquipmentsLoading(false);
@@ -141,7 +152,7 @@ export default function BorrowPage() {
     fetchEquipments();
   }, []);
 
-  // 3. Close window timer countdown when success occurs
+  // 3. ระบบนับถอยหลังปิดหน้าต่างเมื่อทำรายการสำเร็จ
   useEffect(() => {
     if (countdown === null) return;
 
@@ -155,32 +166,37 @@ export default function BorrowPage() {
     }
   }, [countdown]);
 
-  // Selected Equipment Details
+  // อุปกรณ์ที่ถูกเลือกในปัจจุบัน
   const selectedEquipment = equipments.find((item) => item.id === selectedEquipmentId);
   const isOutOfStock = selectedEquipment ? selectedEquipment.available_stock <= 0 : false;
 
-  // Handle Form Submission
+  // กรองรายการอุปกรณ์ตามช่องค้นหา
+  const filteredEquipments = equipments.filter((item) =>
+    item.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // ส่งคำขอยืมอุปกรณ์
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
     if (!profile) {
-      setErrorMessage("LINE User Profile is not loaded yet. Please refresh.");
+      setErrorMessage("ไม่สามารถโหลดข้อมูลโปรไฟล์ LINE ได้ กรุณารีเฟรชหน้าจอใหม่อีกครั้ง");
       return;
     }
 
     if (!department.trim()) {
-      setErrorMessage("Please specify your department.");
+      setErrorMessage("กรุณากรอกแผนกหรือฝ่ายของคุณ");
       return;
     }
 
     if (!selectedEquipmentId) {
-      setErrorMessage("Please select an IT equipment item to borrow.");
+      setErrorMessage("กรุณาเลือกอุปกรณ์ IT ที่ต้องการยืม");
       return;
     }
 
     if (isOutOfStock) {
-      setErrorMessage("The selected equipment is out of stock. Please choose another item.");
+      setErrorMessage("อุปกรณ์ที่เลือกหมดสต็อกแล้ว กรุณาเลือกรายการอื่น");
       return;
     }
 
@@ -202,21 +218,21 @@ export default function BorrowPage() {
       const result = await response.json();
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error || "Failed to submit borrow request.");
+        throw new Error(result.error || "เกิดข้อผิดพลาดในการบันทึกคำขอ");
       }
 
-      // Success
+      // บันทึกสำเร็จ
       setSuccessData({
-        message: result.message || "Borrow request confirmed!",
-        equipmentName: result.transaction?.equipment_name || selectedEquipment?.name || "Equipment",
+        message: result.message || "บันทึกคำขอยืมอุปกรณ์เรียบร้อยแล้ว!",
+        equipmentName: result.transaction?.equipment_name || selectedEquipment?.name || "อุปกรณ์ IT",
         borrowDate: borrowDate,
       });
 
-      // Start 4-second countdown before calling liff.closeWindow()
+      // นับถอยหลัง 4 วินาทีแล้วปิดหน้าต่าง
       setCountdown(4);
     } catch (err: any) {
       console.error("Submission failed:", err);
-      setErrorMessage(err?.message || "An unexpected error occurred. Please try again.");
+      setErrorMessage(err?.message || "เกิดข้อผิดพลาดไม่ทราบสาเหตุ กรุณาลองใหม่อีกครั้ง");
     } finally {
       setSubmitting(false);
     }
@@ -225,8 +241,8 @@ export default function BorrowPage() {
   const todayStr = new Date().toISOString().split("T")[0];
 
   return (
-    <main className="min-h-screen pb-12">
-      {/* Header Bar */}
+    <main className="min-h-screen pb-12 bg-slate-50">
+      {/* แถบด้านบน (Header) */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
         <div className="max-w-md mx-auto px-4 py-3.5 flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
@@ -235,44 +251,44 @@ export default function BorrowPage() {
             </div>
             <div>
               <h1 className="text-base font-bold text-slate-900 leading-tight">Yeum-IT</h1>
-              <p className="text-[11px] font-medium text-slate-500">LINE Equipment Borrowing</p>
+              <p className="text-[11px] font-medium text-slate-500">ระบบยืมอุปกรณ์ไอทีผ่าน LINE</p>
             </div>
           </div>
 
-          {/* Mode Indicator Badge */}
+          {/* ป้ายสถานะการเชื่อมต่อ */}
           <div>
             {isMock ? (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200/80">
                 <Sparkles className="w-3 h-3 mr-1 text-amber-500" />
-                Mock LIFF
+                โหมดทดสอบ
               </span>
             ) : (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#06C755] mr-1.5 animate-pulse" />
-                LINE Online
+                LINE ออนไลน์
               </span>
             )}
           </div>
         </div>
       </header>
 
-      {/* Main Content Container */}
+      {/* เนื้อหาหลัก */}
       <div className="max-w-md mx-auto px-4 pt-4">
-        {/* Mock Dev Alert Banner (shows only when running in mock fallback) */}
+        {/* แถบแจ้งเตือนเมื่ออยู่ในโหมดทดสอบ Localhost */}
         {isMock && (
-          <div className="mb-4 p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start space-x-2">
+          <div className="mb-4 p-3 bg-amber-50/90 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start space-x-2 shadow-xs">
             <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
             <div className="leading-relaxed">
-              <span className="font-semibold">Local Development Mode:</span> Running outside official
-              LINE LIFF. A test profile is loaded so you can test all features smoothly without HTTPS.
+              <span className="font-semibold">โหมดพัฒนาในเครื่อง (Local Dev):</span>{" "}
+              กำลังเปิดนอกแอป LINE ระบบจึงจำลองโปรไฟล์ทดสอบให้ เพื่อให้คุณสามารถทดสอบหน้าเว็บได้ทันที
             </div>
           </div>
         )}
 
-        {/* User Profile Card (Read-only from LIFF) */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 mb-5 transition-all">
+        {/* ข้อมูลผู้ขอยืม (ดึงจาก LINE LIFF) */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 mb-4 transition-all">
           <div className="text-[11px] uppercase tracking-wider font-bold text-slate-400 mb-2.5">
-            Borrower Profile
+            ข้อมูลผู้ขอยืมอุปกรณ์
           </div>
 
           {isLiffLoading ? (
@@ -309,100 +325,100 @@ export default function BorrowPage() {
                   </span>
                   <span className="inline-flex items-center text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-xs">
                     <Lock className="w-2.5 h-2.5 mr-0.5 text-slate-400" />
-                    Verified
+                    ยืนยันตัวตนแล้ว
                   </span>
                 </div>
                 <p className="text-[11px] font-mono text-slate-400 truncate mt-0.5">
-                  UID: {profile.userId}
+                  รหัสผู้ใช้: {profile.userId}
                 </p>
               </div>
             </div>
           ) : (
-            <div className="text-sm text-red-500 py-1">Failed to load borrower profile.</div>
+            <div className="text-sm text-red-500 py-1">ไม่สามารถโหลดข้อมูลผู้ใช้ได้</div>
           )}
         </div>
 
-        {/* Success Modal / Banner */}
+        {/* เมื่อส่งคำขอสำเร็จ แสดงหน้านี้ */}
         {successData ? (
           <div className="bg-white rounded-2xl p-6 shadow-md border border-emerald-200 text-center animate-in fade-in zoom-in duration-200">
             <div className="w-14 h-14 rounded-full bg-emerald-100 text-[#06C755] flex items-center justify-center mx-auto mb-3.5 shadow-sm">
               <CheckCircle2 className="w-8 h-8" />
             </div>
 
-            <h2 className="text-lg font-bold text-slate-900 mb-1">Borrow Request Submitted!</h2>
+            <h2 className="text-lg font-bold text-slate-900 mb-1">ส่งคำขอยืมอุปกรณ์สำเร็จ!</h2>
             <p className="text-xs text-slate-500 mb-4">{successData.message}</p>
 
             <div className="bg-slate-50 rounded-xl p-3.5 text-left border border-slate-100 space-y-2 mb-5">
               <div className="flex justify-between text-xs">
-                <span className="text-slate-500">Item:</span>
+                <span className="text-slate-500">อุปกรณ์ที่ยืม:</span>
                 <span className="font-semibold text-slate-800 text-right">{successData.equipmentName}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-slate-500">Borrow Date:</span>
+                <span className="text-slate-500">วันที่ยืม:</span>
                 <span className="font-semibold text-slate-800">{successData.borrowDate}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-slate-500">Notification:</span>
-                <span className="font-medium text-emerald-600">Dispatched to LINE Notify</span>
+                <span className="text-slate-500">การแจ้งเตือน:</span>
+                <span className="font-medium text-emerald-600">ส่งข้อความเข้า LINE เรียบร้อยแล้ว</span>
               </div>
             </div>
 
             <div className="text-xs text-slate-400 mb-4">
-              Window will automatically close in{" "}
-              <span className="font-bold text-emerald-600">{countdown}s</span>
+              หน้าต่างจะปิดอัตโนมัติในอีก{" "}
+              <span className="font-bold text-emerald-600 text-sm">{countdown} วินาที</span>
             </div>
 
             <button
               type="button"
               onClick={() => closeLiff()}
-              className="w-full py-3 px-4 bg-[#06C755] hover:bg-[#05b34c] text-white font-medium text-sm rounded-xl transition-colors shadow-sm flex items-center justify-center space-x-2"
+              className="w-full py-3.5 px-4 bg-[#06C755] hover:bg-[#05b34c] text-white font-medium text-sm rounded-xl transition-colors shadow-sm flex items-center justify-center space-x-2"
             >
-              <span>Close Window</span>
+              <span>ปิดหน้าต่างทันที</span>
               <ExternalLink className="w-4 h-4" />
             </button>
           </div>
         ) : (
-          /* Borrowing Form */
+          /* ฟอร์มการยืมอุปกรณ์ */
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Error Notification */}
+            {/* แสดงข้อความแจ้งเตือนเมื่อเกิด Error */}
             {errorMessage && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start space-x-2 animate-in fade-in">
                 <XCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
-                <div className="flex-1">{errorMessage}</div>
+                <div className="flex-1 leading-relaxed">{errorMessage}</div>
               </div>
             )}
 
-            {/* Read-Only Borrower Name Field */}
+            {/* ช่องชื่อผู้ยืม (อ่านอย่างเดียว) */}
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
               <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
                 <span className="flex items-center space-x-1.5">
                   <User className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Borrower Name</span>
+                  <span>ชื่อผู้ขอยืม</span>
                 </span>
-                <span className="text-[10px] text-slate-400 font-normal">From LINE</span>
+                <span className="text-[10px] text-slate-400 font-normal">ดึงจากบัญชี LINE</span>
               </label>
 
               <div className="relative">
                 <input
                   type="text"
                   readOnly
-                  value={profile?.displayName || "Loading profile..."}
+                  value={profile?.displayName || "กำลังโหลดข้อมูลโปรไฟล์..."}
                   className="w-full px-3.5 py-2.5 bg-slate-100 text-slate-700 font-medium text-sm rounded-xl border border-slate-200 cursor-not-allowed select-none focus:outline-none"
                 />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
                   <Lock className="w-4 h-4 text-slate-400" />
                 </div>
               </div>
             </div>
 
-            {/* Department Input */}
+            {/* ช่องกรอกแผนก / สังกัด */}
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
               <label
                 htmlFor="department"
                 className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center space-x-1.5"
               >
                 <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                <span>Department / Team</span>
+                <span>แผนก / ฝ่าย / สังกัด</span>
                 <span className="text-red-500">*</span>
               </label>
 
@@ -410,7 +426,7 @@ export default function BorrowPage() {
                 id="department"
                 type="text"
                 required
-                placeholder="e.g. IT Support, Product, Marketing"
+                placeholder="เช่น แผนกไอที, การตลาด, พัฒนาธุรกิจ, บุคคล"
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
                 disabled={submitting}
@@ -418,104 +434,139 @@ export default function BorrowPage() {
               />
             </div>
 
-            {/* Equipment Selection Dropdown */}
+            {/* ช่องเลือกอุปกรณ์ IT พร้อมแสดงรูปภาพ (Visual Equipment Selector) */}
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
-              <label
-                htmlFor="equipment"
-                className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between"
-              >
-                <span className="flex items-center space-x-1.5">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-semibold text-slate-700 flex items-center space-x-1.5">
                   <Laptop className="w-3.5 h-3.5 text-slate-400" />
-                  <span>IT Equipment</span>
+                  <span>เลือกอุปกรณ์ IT ที่ต้องการยืม</span>
                   <span className="text-red-500">*</span>
-                </span>
-                {isEquipmentsLoading && (
+                </label>
+                {isEquipmentsLoading ? (
                   <span className="text-[10px] text-slate-400 flex items-center">
-                    <Loader2 className="w-2.5 h-2.5 animate-spin mr-1" /> Loading stock
+                    <Loader2 className="w-2.5 h-2.5 animate-spin mr-1" /> กำลังโหลดสต็อก
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-slate-400 font-normal">
+                    แตะที่อุปกรณ์เพื่อเลือก
                   </span>
                 )}
-              </label>
-
-              <div className="relative">
-                <select
-                  id="equipment"
-                  required
-                  value={selectedEquipmentId}
-                  onChange={(e) => setSelectedEquipmentId(e.target.value)}
-                  disabled={submitting || isEquipmentsLoading}
-                  className="w-full px-3.5 py-2.5 bg-white text-slate-900 text-sm rounded-xl border border-slate-300 focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/20 outline-none transition appearance-none cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
-                >
-                  <option value="" disabled>
-                    -- Select IT Equipment --
-                  </option>
-                  {equipments.map((item) => {
-                    const outOfStock = item.available_stock <= 0;
-                    return (
-                      <option
-                        key={item.id}
-                        value={item.id}
-                        disabled={outOfStock}
-                        className={outOfStock ? "text-slate-400 bg-slate-50" : "text-slate-900"}
-                      >
-                        {item.name} {outOfStock ? "— (Out of Stock)" : `(${item.available_stock} available)`}
-                      </option>
-                    );
-                  })}
-                </select>
-
-                <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs">
-                  ▼
-                </div>
               </div>
 
-              {/* Selected Equipment Preview Card */}
-              {selectedEquipment && (
-                <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center space-x-3 animate-in fade-in">
-                  {selectedEquipment.image_url && (
-                    <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-200 shrink-0 border border-slate-200">
-                      <Image
-                        src={selectedEquipment.image_url}
-                        alt={selectedEquipment.name}
-                        fill
-                        sizes="48px"
-                        className="object-cover"
-                        unoptimized
-                      />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-xs font-semibold text-slate-800 truncate">
-                      {selectedEquipment.name}
-                    </h3>
-                    <div className="flex items-center space-x-2 mt-1">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${
-                          selectedEquipment.available_stock > 0
-                            ? "bg-emerald-100 text-emerald-800"
-                            : "bg-red-100 text-red-800"
+              {/* ช่องค้นหาอุปกรณ์ */}
+              <div className="relative mb-3">
+                <input
+                  type="text"
+                  placeholder="ค้นหาชื่ออุปกรณ์..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3.5 py-2 bg-slate-50 text-slate-800 text-xs rounded-xl border border-slate-200 focus:border-[#06C755] focus:bg-white outline-none transition"
+                />
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              </div>
+
+              {/* รายการการ์ดอุปกรณ์พร้อมรูปภาพ */}
+              <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                {isEquipmentsLoading ? (
+                  <div className="py-8 text-center text-slate-400 text-xs flex flex-col items-center">
+                    <Loader2 className="w-6 h-6 animate-spin text-[#06C755] mb-2" />
+                    กำลังโหลดรายการอุปกรณ์...
+                  </div>
+                ) : filteredEquipments.length === 0 ? (
+                  <div className="py-6 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    ไม่พบอุปกรณ์ที่ค้นหา
+                  </div>
+                ) : (
+                  filteredEquipments.map((item) => {
+                    const isSelected = selectedEquipmentId === item.id;
+                    const outOfStock = item.available_stock <= 0;
+
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => {
+                          if (!outOfStock && !submitting) {
+                            setSelectedEquipmentId(item.id);
+                          }
+                        }}
+                        className={`relative p-3 rounded-xl border transition-all flex items-center space-x-3 select-none ${
+                          outOfStock
+                            ? "bg-slate-50/80 border-slate-200 opacity-60 cursor-not-allowed"
+                            : isSelected
+                            ? "bg-emerald-50/70 border-[#06C755] shadow-xs ring-2 ring-[#06C755]/20 cursor-pointer"
+                            : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50 cursor-pointer"
                         }`}
                       >
-                        {selectedEquipment.available_stock > 0
-                          ? `${selectedEquipment.available_stock} Available`
-                          : "Out of Stock"}
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        Total: {selectedEquipment.total_stock}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
+                        {/* รูปภาพอุปกรณ์ */}
+                        <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-slate-200/80 shadow-2xs">
+                          {item.image_url ? (
+                            <Image
+                              src={item.image_url}
+                              alt={item.name}
+                              fill
+                              sizes="56px"
+                              className="object-cover"
+                              unoptimized
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-400">
+                              <Laptop className="w-6 h-6" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ข้อมูลอุปกรณ์ */}
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-xs font-semibold text-slate-800 leading-snug line-clamp-2">
+                            {item.name}
+                          </h3>
+                          <div className="flex items-center space-x-2 mt-1.5">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                outOfStock
+                                  ? "bg-rose-100 text-rose-700"
+                                  : "bg-emerald-100 text-emerald-800"
+                              }`}
+                            >
+                              {outOfStock
+                                ? "สินค้าหมด"
+                                : `คงเหลือ ${item.available_stock} ชิ้น`}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              ทั้งหมด {item.total_stock} ชิ้น
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* ไอคอนแสดงการเลือก */}
+                        <div className="shrink-0 pl-1">
+                          {outOfStock ? (
+                            <span className="text-[10px] font-medium text-rose-500 bg-rose-50 border border-rose-200 px-2 py-1 rounded-lg">
+                              ของหมด
+                            </span>
+                          ) : isSelected ? (
+                            <div className="w-6 h-6 rounded-full bg-[#06C755] text-white flex items-center justify-center shadow-xs">
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
+                            </div>
+                          ) : (
+                            <div className="w-6 h-6 rounded-full border-2 border-slate-300" />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
 
-            {/* Borrow Date Picker */}
+            {/* ช่องเลือกวันที่ยืม */}
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
               <label
                 htmlFor="borrowDate"
                 className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center space-x-1.5"
               >
                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span>Borrow Date</span>
+                <span>วันที่เริ่มยืมอุปกรณ์</span>
                 <span className="text-red-500">*</span>
               </label>
 
@@ -531,7 +582,7 @@ export default function BorrowPage() {
               />
             </div>
 
-            {/* Submit Button */}
+            {/* ปุ่มยืนยันการยืม */}
             <div className="pt-2">
               <button
                 type="submit"
@@ -541,20 +592,23 @@ export default function BorrowPage() {
                 {submitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Processing Request...</span>
+                    <span>กำลังบันทึกข้อมูล...</span>
                   </>
+                ) : !selectedEquipmentId ? (
+                  <span>กรุณาแตะเลือกอุปกรณ์ด้านบน</span>
                 ) : isOutOfStock ? (
-                  <span>Selected Item Out of Stock</span>
+                  <span>อุปกรณ์ที่เลือกหมดสต็อก</span>
                 ) : (
                   <>
-                    <span>Confirm & Borrow Item</span>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>ยืนยันการยืมอุปกรณ์</span>
                   </>
                 )}
               </button>
             </div>
 
             <p className="text-[11px] text-center text-slate-400 pt-1">
-              By confirming, a notification will be sent to the IT Department.
+              *เมื่อกดยืนยัน ระบบจะส่งการแจ้งเตือนไปยังเจ้าหน้าที่ IT ทันที
             </p>
           </form>
         )}
