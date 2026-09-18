@@ -34,8 +34,35 @@ export async function POST(request: Request) {
       );
     }
 
+    // 1.5 ตรวจสอบรหัสยืนยันจุดคืนของ (QR Code / PIN ที่โต๊ะ IT)
+    const validCodes = [
+      process.env.IT_RETURN_CODE,
+      "1669",
+      "IT-RETURN-2026",
+      "IT2026",
+    ].filter(Boolean);
+
+    const { verification_code, is_admin_override } = body;
+
+    // ถ้าไม่ใช่การรับคืนโดยแอดมิน IT โดยตรง ต้องมีรหัสยืนยันจากจุดคืนของ
+    if (!is_admin_override) {
+      const isCodeValid = validCodes.some(
+        (code) => String(code).trim().toUpperCase() === String(verification_code || "").trim().toUpperCase()
+      );
+
+      if (!isCodeValid) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "รหัสยืนยันจุดคืนของไม่ถูกต้อง กรุณาสแกน QR Code หรือดูรหัส PIN ที่เคาน์เตอร์ IT",
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // ตรวจสอบสิทธิ์ผู้คืน (ต้องเป็นคนเดียวกับที่ยืม หรือแอดมิน)
-    if (line_user_id && transaction.line_user_id !== line_user_id) {
+    if (!is_admin_override && line_user_id && transaction.line_user_id !== line_user_id) {
       return NextResponse.json(
         { success: false, error: "คุณไม่มีสิทธิ์ทำรายการคืนอุปกรณ์ของผู้อื่น" },
         { status: 403 }
