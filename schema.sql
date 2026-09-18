@@ -142,7 +142,55 @@ BEGIN
 END;
 $$;
 
--- 9. Seed Sample IT Equipment Data
+-- 9. Atomic Return Function (Restores stock safely)
+CREATE OR REPLACE FUNCTION return_equipment_atomic(
+    p_transaction_id UUID,
+    p_return_date DATE DEFAULT CURRENT_DATE
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_transaction transactions%ROWTYPE;
+    v_equipment equipments%ROWTYPE;
+BEGIN
+    -- Find and lock transaction
+    SELECT * INTO v_transaction
+    FROM transactions
+    WHERE id = p_transaction_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Transaction not found' USING ERRCODE = 'P0002';
+    END IF;
+
+    IF v_transaction.status = 'returned' THEN
+        RAISE EXCEPTION 'Equipment has already been returned' USING ERRCODE = 'P0003';
+    END IF;
+
+    -- Update transaction
+    UPDATE transactions
+    SET status = 'returned',
+        return_date = p_return_date
+    WHERE id = p_transaction_id;
+
+    -- Increment equipment available stock
+    UPDATE equipments
+    SET available_stock = LEAST(available_stock + 1, total_stock)
+    WHERE id = v_transaction.equipment_id
+    RETURNING * INTO v_equipment;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'transaction_id', p_transaction_id,
+        'equipment_name', v_equipment.name,
+        'restored_stock', v_equipment.available_stock
+    );
+END;
+$$;
+
+-- 10. Seed Sample IT Equipment Data
 INSERT INTO equipments (name, image_url, total_stock, available_stock)
 VALUES
     ('MacBook Pro 14" M3 (Space Gray)', 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=600&q=80', 5, 3),
@@ -153,3 +201,4 @@ VALUES
     ('Epson Full HD Mobile Projector', 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=600&q=80', 2, 0), -- Out of stock test case
     ('Anker 12-in-1 USB-C Docking Station', 'https://images.unsplash.com/photo-1622445262464-84b14e4b7501?auto=format&fit=crop&w=600&q=80', 5, 5)
 ON CONFLICT DO NOTHING;
+
