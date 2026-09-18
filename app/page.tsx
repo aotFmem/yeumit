@@ -27,7 +27,9 @@ import {
   X,
   ShieldCheck,
   Users,
+  QrCode,
 } from "lucide-react";
+import liff from "@line/liff";
 import { initializeLiff, closeLiff } from "@/lib/liff";
 import { supabase } from "@/lib/supabaseClient";
 import { Equipment, UserProfile, Transaction } from "@/lib/types";
@@ -165,11 +167,92 @@ export default function BorrowPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
 
-  // สถานะการคืน (Return Tab)
+  // สถานะการคืน (Return Tab) แบบสแกน QR Code (ไม่ใช้ PIN)
   const [borrowedItems, setBorrowedItems] = useState<Transaction[]>([]);
   const [isLoadingBorrowed, setIsLoadingBorrowed] = useState(false);
   const [returningId, setReturningId] = useState<string | null>(null);
   const [returnSuccessMsg, setReturnSuccessMsg] = useState<string | null>(null);
+  const [activeReturnTx, setActiveReturnTx] = useState<Transaction | null>(null);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [qrScanError, setQrScanError] = useState<string | null>(null);
+
+  const OFFICIAL_QR_VALUE = "IT-RETURN-2026";
+
+  // ฟังก์ชันดำเนินการส่งคืนอุปกรณ์ด้วย QR Code
+  const processQrReturn = async (txId: string, scannedCode: string, equipName?: string) => {
+    setReturningId(txId);
+    setQrScanError(null);
+    setErrorMessage(null);
+
+    // ตรวจสอบว่า QR Code ตรงกับป้ายที่โต๊ะ IT หรือไม่
+    const isValidCode =
+      scannedCode === OFFICIAL_QR_VALUE ||
+      scannedCode.includes("IT-RETURN") ||
+      scannedCode === "IT2026";
+
+    if (!isValidCode) {
+      setQrScanError("❌ QR Code ไม่ถูกต้อง! กรุณาสแกนจากป้ายที่เคาน์เตอร์ IT เท่านั้น");
+      setReturningId(null);
+      return;
+    }
+
+    try {
+      if (txId.startsWith("demo-tx-")) {
+        setBorrowedItems((prev) => prev.filter((item) => item.id !== txId));
+        setReturnSuccessMsg(`✅ สแกน QR สำเร็จ! คืน '${equipName || "อุปกรณ์"}' เรียบร้อยแล้ว`);
+        setIsQrModalOpen(false);
+        setActiveReturnTx(null);
+        return;
+      }
+
+      const res = await fetch("/api/return", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transaction_id: txId,
+          line_user_id: profile?.userId,
+          qr_code: scannedCode,
+        }),
+      });
+
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        throw new Error(result.error || "ไม่สามารถทำรายการคืนอุปกรณ์ได้");
+      }
+
+      setReturnSuccessMsg(result.message || `สแกน QR คืน '${equipName || "อุปกรณ์"}' สำเร็จแล้ว!`);
+      setIsQrModalOpen(false);
+      setActiveReturnTx(null);
+      if (profile?.userId) fetchUserBorrowedItems(profile.userId);
+      fetchEquipments();
+    } catch (err: any) {
+      setQrScanError(err?.message || "เกิดข้อผิดพลาดในการตรวจสอบ QR Code");
+    } finally {
+      setReturningId(null);
+    }
+  };
+
+  // เรียกใช้กล้องสแกน QR ผ่าน LINE LIFF
+  const triggerQrScanner = async (tx: Transaction) => {
+    setActiveReturnTx(tx);
+    setQrScanError(null);
+
+    // 1. ถ้าทำงานอยู่ในแอป LINE บนมือถือ ให้เรียก LIFF Scanner ทันที
+    if (typeof window !== "undefined" && liff.isInClient() && liff.scanCodeV2) {
+      try {
+        const res = await liff.scanCodeV2();
+        if (res?.value) {
+          processQrReturn(tx.id, res.value, tx.equipments?.name);
+        }
+      } catch (e: any) {
+        console.warn("LINE LIFF scanCodeV2 error/cancelled:", e);
+        setIsQrModalOpen(true);
+      }
+    } else {
+      // 2. ถ้าเปิดในเบราว์เซอร์คอมพิวเตอร์ / โหมดทดสอบ ให้เปิด Modal สแกน
+      setIsQrModalOpen(true);
+    }
+  };
 
   // 1. เริ่มต้นระบบ LINE LIFF เมื่อโหลดหน้าเว็บ
   useEffect(() => {
@@ -880,22 +963,22 @@ export default function BorrowPage() {
                           </div>
                         </div>
 
-                        {/* ปุ่มกดคืนอุปกรณ์แบบตรงไปตรงมา (ไม่มี PIN) */}
+                        {/* ปุ่มกดคืนอุปกรณ์ด้วยการสแกน QR Code เท่านั้น (ไม่มี PIN) */}
                         <button
                           type="button"
                           disabled={isReturning}
-                          onClick={() => handleDirectReturn(tx.id, equip?.name)}
+                          onClick={() => triggerQrScanner(tx)}
                           className="w-full py-2.5 px-3 bg-white hover:bg-emerald-50 active:bg-emerald-100 text-emerald-700 border border-emerald-300 hover:border-[#06C755] font-semibold text-xs rounded-lg transition flex items-center justify-center space-x-1.5 shadow-2xs disabled:opacity-50"
                         >
                           {isReturning ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>กำลังบันทึกการคืน...</span>
+                              <span>กำลังตรวจสอบการคืน...</span>
                             </>
                           ) : (
                             <>
-                              <RotateCcw className="w-3.5 h-3.5 text-[#06C755]" />
-                              <span>กดเพื่อส่งคืนอุปกรณ์นี้</span>
+                              <QrCode className="w-3.5 h-3.5 text-[#06C755]" />
+                              <span>📷 สแกน QR ที่โต๊ะ IT เพื่อส่งคืน</span>
                             </>
                           )}
                         </button>
@@ -908,6 +991,75 @@ export default function BorrowPage() {
           </div>
         )}
       </div>
+
+      {/* MODAL: กล้องสแกน QR Code จุดคืนของ IT (เฉพาะ QR - ไม่มีช่องกรอก PIN) */}
+      {isQrModalOpen && activeReturnTx && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-slate-100 relative">
+            <button
+              type="button"
+              onClick={() => {
+                setIsQrModalOpen(false);
+                setActiveReturnTx(null);
+                setQrScanError(null);
+              }}
+              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center mb-3">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-[#06C755] flex items-center justify-center mx-auto mb-2">
+                <QrCode className="w-6 h-6" />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900">สแกน QR จุดรับคืนอุปกรณ์ IT</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                อุปกรณ์: <span className="font-semibold text-slate-800">{activeReturnTx.equipments?.name}</span>
+              </p>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-center mb-4 space-y-3">
+              <div className="w-20 h-20 bg-white rounded-2xl border-2 border-dashed border-emerald-400 flex items-center justify-center mx-auto shadow-2xs">
+                <QrCode className="w-10 h-10 text-emerald-600 animate-pulse" />
+              </div>
+
+              <p className="text-xs text-slate-600 leading-relaxed">
+                กรุณานำอุปกรณ์มาที่เคาน์เตอร์ IT แล้วส่องกล้องไปที่ <span className="font-semibold text-slate-800">ป้าย QR Code ประจำโต๊ะ IT</span> เพื่อยืนยันการคืน
+              </p>
+
+              {qrScanError && (
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600 text-center font-medium">
+                  {qrScanError}
+                </div>
+              )}
+
+              {/* ปุ่มจำลองการสแกน QR สำหรับกรณีทดสอบบนคอมพิวเตอร์ */}
+              <button
+                type="button"
+                onClick={() =>
+                  processQrReturn(activeReturnTx.id, OFFICIAL_QR_VALUE, activeReturnTx.equipments?.name)
+                }
+                className="w-full py-2.5 px-3 bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-semibold rounded-xl shadow-xs flex items-center justify-center space-x-1.5 transition"
+              >
+                <Check className="w-4 h-4" />
+                <span>จำลองสแกน QR โต๊ะ IT (โหมดทดสอบ)</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsQrModalOpen(false);
+                setActiveReturnTx(null);
+                setQrScanError(null);
+              }}
+              className="w-full py-2.5 bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl hover:bg-slate-200 transition"
+            >
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

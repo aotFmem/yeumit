@@ -34,7 +34,33 @@ export async function POST(request: Request) {
       );
     }
 
-    const { is_admin_override } = body;
+    const { is_admin_override, qr_code } = body;
+
+    // ตรวจสอบการสแกน QR Code ประจำโต๊ะ IT (ถ้าไม่ใช่ IT รับคืนเอง)
+    if (!is_admin_override) {
+      const validQrCodes = [
+        process.env.IT_RETURN_CODE,
+        "IT-RETURN-2026",
+        "IT2026",
+      ].filter(Boolean);
+
+      const isQrValid = validQrCodes.some(
+        (code) =>
+          qr_code &&
+          (String(qr_code).trim().toUpperCase() === String(code).trim().toUpperCase() ||
+            String(qr_code).includes(String(code)))
+      );
+
+      if (!isQrValid) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "QR Code ไม่ถูกต้อง! กรุณาสแกนจากป้ายจุดรับคืนที่เคาน์เตอร์ IT เท่านั้น",
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // ตรวจสอบสิทธิ์ผู้คืน (ต้องเป็นคนเดียวกับที่ยืม หรือแอดมิน)
     if (!is_admin_override && line_user_id && transaction.line_user_id !== line_user_id) {

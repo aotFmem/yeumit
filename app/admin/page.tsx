@@ -12,9 +12,13 @@ import {
   RefreshCw,
   Clock,
   ShieldAlert,
+  QrCode,
+  X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { Equipment, Transaction } from "@/lib/types";
+
+const OFFICIAL_IT_QR_CODE = "IT-RETURN-2026";
 
 // รายการยืมจำลองเริ่มต้น
 const INITIAL_MOCK_TRANSACTIONS: Transaction[] = [
@@ -80,6 +84,7 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [returningId, setReturningId] = useState<string | null>(null);
+  const [showQrModal, setShowQrModal] = useState(false);
 
   // ดึงข้อมูลทั้งหมด
   const loadData = async () => {
@@ -232,6 +237,28 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
+        {/* ป้าย QR Code ประจำโต๊ะ IT */}
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 p-3.5 rounded-2xl border border-emerald-200 flex items-center justify-between shadow-2xs">
+          <div className="space-y-1">
+            <div className="flex items-center space-x-1.5 text-xs font-bold text-emerald-900">
+              <QrCode className="w-4 h-4 text-[#06C755]" />
+              <span>ป้าย QR Code จุดรับคืนอุปกรณ์ IT</span>
+            </div>
+            <p className="text-[11px] text-emerald-700">
+              สำหรับเปิดโชว์บนหน้าจอ หรือปริ้นท์ติดไว้ที่เคาน์เตอร์ IT
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowQrModal(true)}
+            className="py-1.5 px-3 bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-semibold rounded-xl shadow-xs flex items-center space-x-1 transition"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            <span>เปิดป้าย QR</span>
+          </button>
+        </div>
+
         {/* รายการของที่ถูกยืมทั้งหมด (ใครถืออะไรอยู่) */}
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
           <div className="flex items-center justify-between mb-3">
@@ -330,6 +357,51 @@ export default function AdminDashboardPage() {
           )}
         </div>
       </div>
+
+      {/* MODAL: ป้าย QR Code จุดคืนของ IT (สำหรับตั้งโต๊ะเคาน์เตอร์ IT) */}
+      {showQrModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-xs w-full p-5 text-center shadow-2xl relative">
+            <button
+              type="button"
+              onClick={() => setShowQrModal(false)}
+              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-[#06C755] flex items-center justify-center mx-auto mb-2">
+              <QrCode className="w-5 h-5" />
+            </div>
+
+            <h3 className="text-sm font-bold text-slate-900">ป้าย QR จุดรับคืนอุปกรณ์ IT</h3>
+            <p className="text-[11px] text-slate-500 mt-0.5 mb-3">
+              ตั้งที่โต๊ะเคาน์เตอร์ IT รพช. ให้ผู้ยืมสแกน
+            </p>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border-2 border-dashed border-emerald-300 inline-block mb-3">
+              <div className="w-40 h-40 bg-white p-2.5 rounded-xl shadow-xs flex flex-col items-center justify-center mx-auto">
+                <QrCode className="w-32 h-32 text-slate-900" />
+              </div>
+              <p className="text-[11px] font-mono font-bold text-emerald-800 mt-2">
+                {OFFICIAL_IT_QR_CODE}
+              </p>
+            </div>
+
+            <p className="text-[11px] text-slate-500 mb-4">
+              ผู้ยืมจะต้องนำอุปกรณ์มาสแกนป้ายนี้ที่ห้อง IT เท่านั้น ถึงจะทำรายการคืนสำเร็จ
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setShowQrModal(false)}
+              className="w-full py-2.5 bg-slate-900 text-white text-xs font-semibold rounded-xl hover:bg-slate-800 transition"
+            >
+              ปิดหน้าต่าง
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
