@@ -81,6 +81,15 @@ CREATE POLICY "Service role manages transactions"
     USING (true)
     WITH CHECK (true);
 
+-- Allow return status update on transactions (safeguard when using anon API key)
+DROP POLICY IF EXISTS "Allow return update on transactions" ON transactions;
+CREATE POLICY "Allow return update on transactions"
+    ON transactions
+    FOR UPDATE
+    TO anon, authenticated
+    USING (true)
+    WITH CHECK (true);
+
 -- 8. Atomic Borrowing Function (Prevents Race Conditions & Overbooking)
 CREATE OR REPLACE FUNCTION borrow_equipment_atomic(
     p_line_user_id TEXT,

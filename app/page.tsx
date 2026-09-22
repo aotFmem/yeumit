@@ -230,11 +230,31 @@ export default function BorrowPage() {
         throw new Error(result.error || "ไม่สามารถทำรายการคืนอุปกรณ์ได้");
       }
 
+      // นำรายการที่คืนออกจากหน้าจอทันที (Optimistic update)
+      setBorrowedItems((prev) => prev.filter((item) => item.id !== txId));
+
+      // คืนสต็อกอุปกรณ์เข้าคลังทันที
+      if (activeReturnTx?.equipment_id) {
+        setEquipments((prev) =>
+          prev.map((eq) =>
+            eq.id === activeReturnTx.equipment_id
+              ? { ...eq, available_stock: Math.min(eq.available_stock + 1, eq.total_stock) }
+              : eq
+          )
+        );
+      }
+
       setReturnSuccessMsg(result.message || `สแกน QR คืน '${equipName || "อุปกรณ์"}' สำเร็จแล้ว!`);
       setIsQrModalOpen(false);
       setActiveReturnTx(null);
-      if (profile?.userId) fetchUserBorrowedItems(profile.userId);
-      fetchEquipments();
+
+      // ซิงค์ข้อมูลกับฐานข้อมูลในเบื้องหลัง
+      if (profile?.userId) {
+        setTimeout(() => {
+          fetchUserBorrowedItems(profile.userId);
+          fetchEquipments();
+        }, 600);
+      }
     } catch (err: any) {
       setQrScanError(err?.message || "เกิดข้อผิดพลาดในการตรวจสอบ QR Code");
     } finally {

@@ -100,35 +100,54 @@ export async function POST(request: Request) {
     const equipmentName = transaction.equipments?.name || "อุปกรณ์ IT";
 
     // 7. อัปเดตสถานะในตาราง transactions เป็น 'returned'
-    const { error: updateTxErr } = await supabaseAdmin
-      .from("transactions")
-      .update({
-        status: "returned",
-        return_date: todayStr,
-      })
-      .eq("id", transaction_id);
+    // A. ทดลองเรียกใช้ atomic RPC function ก่อน (ทำงานแบบ SECURITY DEFINER ข้ามข้อจำกัด RLS)
+    let atomicSuccess = false;
+    try {
+      const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc("return_equipment_atomic", {
+        p_transaction_id: transaction_id,
+        p_return_date: todayStr,
+      });
 
-    if (updateTxErr) {
-      return NextResponse.json(
-        { success: false, error: `ไม่สามารถอัปเดตสถานะการคืนได้: ${updateTxErr.message}` },
-        { status: 500 }
-      );
+      if (!rpcErr && rpcData?.success) {
+        atomicSuccess = true;
+      }
+    } catch {
+      // RPC not installed, will fallback to direct update
     }
 
-    // 8. คืนสต็อกในตาราง equipments (+1 available_stock)
-    if (equipmentId) {
-      const { data: equipment } = await supabaseAdmin
-        .from("equipments")
-        .select("available_stock, total_stock")
-        .eq("id", equipmentId)
-        .single();
+    // B. Fallback: หาก RPC ไม่ได้ติดตั้ง ให้ทำ direct update พร้อม .select()
+    if (!atomicSuccess) {
+      const { data: updatedRows, error: updateTxErr } = await supabaseAdmin
+        .from("transactions")
+        .update({
+          status: "returned",
+          return_date: todayStr,
+        })
+        .eq("id", transaction_id)
+        .select();
 
-      if (equipment) {
-        const newStock = Math.min(equipment.available_stock + 1, equipment.total_stock);
-        await supabaseAdmin
+      if (updateTxErr) {
+        return NextResponse.json(
+          { success: false, error: `ไม่สามารถอัปเดตสถานะการคืนได้: ${updateTxErr.message}` },
+          { status: 500 }
+        );
+      }
+
+      // 8. คืนสต็อกในตาราง equipments (+1 available_stock)
+      if (equipmentId) {
+        const { data: equipment } = await supabaseAdmin
           .from("equipments")
-          .update({ available_stock: newStock })
-          .eq("id", equipmentId);
+          .select("available_stock, total_stock")
+          .eq("id", equipmentId)
+          .single();
+
+        if (equipment) {
+          const newStock = Math.min(equipment.available_stock + 1, equipment.total_stock);
+          await supabaseAdmin
+            .from("equipments")
+            .update({ available_stock: newStock })
+            .eq("id", equipmentId);
+        }
       }
     }
 
