@@ -47,3 +47,22 @@ export interface UserProfile {
   pictureUrl?: string;
   statusMessage?: string;
 }
+
+export interface EquipmentFormData {
+  id?: string;
+  name: string;
+  image_url: string;
+  total_stock: number;
+}
+
+export interface AdminAuthVerifyRequest {
+  passcode?: string;
+  line_user_id?: string;
+}
+
+export interface AdminAuthVerifyResponse {
+  success: boolean;
+  message?: string;
+  token?: string;
+  is_admin?: boolean;
+}

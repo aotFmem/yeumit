@@ -990,6 +990,20 @@ export default function BorrowPage() {
             </div>
           </div>
         )}
+
+        {/* Footer & ลิงก์เข้าหน้าผู้ดูแลระบบ IT */}
+        <div className="pt-8 pb-4 text-center text-slate-400 text-[11px] space-y-1">
+          <p>กลุ่มงานประกันสุขภาพ ยุทธศาสตร์ และสารสนเทศทางการแพทย์ (IT)</p>
+          <p>
+            <Link
+              href="/admin"
+              className="text-slate-400 hover:text-blue-600 transition inline-flex items-center space-x-1 underline decoration-dotted underline-offset-4"
+            >
+              <Lock className="w-3 h-3" />
+              <span>เข้าสู่ระบบผู้ดูแลระบบ (IT Staff Only)</span>
+            </Link>
+          </p>
+        </div>
       </div>
 
       {/* MODAL: กล้องสแกน QR Code จุดคืนของ IT (เฉพาะ QR - ไม่มีช่องกรอก PIN) */}
