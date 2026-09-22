@@ -26,7 +26,7 @@ export async function POST(request: Request) {
         (code) =>
           qr_code &&
           (String(qr_code).trim().toUpperCase() === String(code).trim().toUpperCase() ||
-            String(qr_code).includes(String(code)))
+            String(qr_code).toUpperCase().includes(String(code).trim().toUpperCase()))
       );
 
       if (!isQrValid) {

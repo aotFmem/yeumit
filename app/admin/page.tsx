@@ -26,8 +26,11 @@ import {
   ShieldCheck,
   CheckCircle2,
   Copy,
+  Download,
+  Printer,
 } from "lucide-react";
 import liff from "@line/liff";
+import QRCode from "qrcode";
 import { initializeLiff } from "@/lib/liff";
 import { supabase } from "@/lib/supabaseClient";
 import { Equipment, Transaction, UserProfile } from "@/lib/types";
@@ -218,6 +221,67 @@ export default function AdminDashboardPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [returningId, setReturningId] = useState<string | null>(null);
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>("");
+
+  useEffect(() => {
+    QRCode.toDataURL(OFFICIAL_IT_QR_CODE, {
+      width: 400,
+      margin: 2,
+      color: {
+        dark: "#0f172a",
+        light: "#ffffff",
+      },
+    })
+      .then((url) => setQrCodeDataUrl(url))
+      .catch((err) => console.error("QR Code generation error:", err));
+  }, []);
+
+  const handleDownloadQr = () => {
+    if (!qrCodeDataUrl) return;
+    const link = document.createElement("a");
+    link.href = qrCodeDataUrl;
+    link.download = `IT-RETURN-QR-CODE.png`;
+    link.click();
+  };
+
+  const handlePrintStandee = () => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>ป้าย QR Code จุดรับคืนอุปกรณ์ IT</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; padding: 40px; background: #f8fafc; }
+            .card { background: #ffffff; border: 3px solid #06C755; border-radius: 28px; padding: 36px 24px; max-width: 440px; margin: 0 auto; box-shadow: 0 10px 25px rgba(0,0,0,0.08); }
+            h1 { color: #0f172a; margin: 0 0 6px 0; font-size: 24px; font-weight: 800; }
+            .sub { color: #64748b; font-size: 13px; margin: 0 0 20px 0; }
+            .qr-wrap { background: #f8fafc; border: 2px dashed #06C755; border-radius: 20px; padding: 16px; display: inline-block; margin-bottom: 16px; }
+            .qr { width: 260px; height: 260px; display: block; }
+            .code { font-family: monospace; font-size: 18px; font-weight: 800; color: #065f46; background: #ecfdf5; padding: 6px 16px; border-radius: 12px; display: inline-block; border: 1px solid #a7f3d0; }
+            .instr { font-size: 14px; font-weight: 600; color: #1e293b; margin-top: 18px; }
+            .footer { margin-top: 24px; font-size: 11px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 16px; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h1>จุดรับคืนอุปกรณ์ IT</h1>
+            <p class="sub">กลุ่มงานประกันสุขภาพ ยุทธศาสตร์ และสารสนเทศทางการแพทย์</p>
+            <div class="qr-wrap">
+              <img class="qr" src="${qrCodeDataUrl}" />
+            </div>
+            <div><span class="code">${OFFICIAL_IT_QR_CODE}</span></div>
+            <p class="instr">📷 สแกนผ่านเมนู "คืนอุปกรณ์" บนระบบ Yeum-IT เพื่อยืนยันการคืน</p>
+            <div class="footer">นำอุปกรณ์มาส่งคืนที่โต๊ะเคาน์เตอร์ IT ทุกครั้ง ขอบคุณครับ</div>
+          </div>
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
 
   // --- ฟอร์ม เพิ่ม/แก้ไข อุปกรณ์ ---
   const [showFormModal, setShowFormModal] = useState<boolean>(false);
@@ -1223,7 +1287,7 @@ export default function AdminDashboardPage() {
       {/* ========================================================= */}
       {showQrModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-xs w-full p-5 text-center shadow-2xl relative">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 text-center shadow-2xl relative border border-slate-100">
             <button
               type="button"
               onClick={() => setShowQrModal(false)}
@@ -1238,21 +1302,52 @@ export default function AdminDashboardPage() {
 
             <h3 className="text-sm font-bold text-slate-900">ป้าย QR จุดรับคืนอุปกรณ์ IT</h3>
             <p className="text-[11px] text-slate-500 mt-0.5 mb-3">
-              ตั้งที่โต๊ะเคาน์เตอร์ IT ให้ผู้ยืมสแกน
+              ตั้งที่โต๊ะเคาน์เตอร์ IT ให้ผู้ยืมสแกนผ่านแอป Yeum-IT
             </p>
 
-            <div className="p-4 bg-slate-50 rounded-2xl border-2 border-dashed border-emerald-300 inline-block mb-3">
-              <div className="w-40 h-40 bg-white p-2.5 rounded-xl shadow-xs flex flex-col items-center justify-center mx-auto">
-                <QrCode className="w-32 h-32 text-slate-900" />
+            <div className="p-3 bg-slate-50 rounded-2xl border-2 border-dashed border-emerald-400 inline-block mb-3">
+              <div className="w-48 h-48 bg-white p-2 rounded-xl shadow-xs flex flex-col items-center justify-center mx-auto">
+                {qrCodeDataUrl ? (
+                  <img
+                    src={qrCodeDataUrl}
+                    alt="Official IT Return QR Code"
+                    className="w-44 h-44 object-contain"
+                  />
+                ) : (
+                  <div className="w-44 h-44 flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
+                  </div>
+                )}
               </div>
-              <p className="text-[11px] font-mono font-bold text-emerald-800 mt-2">
+              <p className="text-xs font-mono font-bold text-emerald-800 mt-2 tracking-wider">
                 {OFFICIAL_IT_QR_CODE}
               </p>
             </div>
 
-            <p className="text-[11px] text-slate-500 mb-4">
-              ผู้ยืมจะต้องนำอุปกรณ์มาสแกนป้ายนี้ที่ห้อง IT เท่านั้น ถึงจะทำรายการคืนสำเร็จ
+            <p className="text-[11px] text-slate-500 mb-3 px-2">
+              ผู้ยืมจะต้องสแกนป้ายนี้ที่เคาน์เตอร์ IT เท่านั้น เพื่อยืนยันการนำอุปกรณ์มาคืน
             </p>
+
+            {/* ปุ่มพิมพ์ป้ายตั้งโต๊ะ / ดาวน์โหลดรูปภาพ QR */}
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <button
+                type="button"
+                onClick={handlePrintStandee}
+                className="py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-xl border border-emerald-300 transition flex items-center justify-center space-x-1.5"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>พิมพ์ป้ายตั้งโต๊ะ</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadQr}
+                className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>บันทึกรูป QR</span>
+              </button>
+            </div>
 
             <button
               type="button"

@@ -33,6 +33,7 @@ import liff from "@line/liff";
 import { initializeLiff, closeLiff } from "@/lib/liff";
 import { supabase } from "@/lib/supabaseClient";
 import { Equipment, UserProfile, Transaction } from "@/lib/types";
+import QrScannerModal from "@/components/QrScannerModal";
 
 // รายชื่อกลุ่มงานและแผนกมาตรฐานในโรงพยาบาล
 const HOSPITAL_DEPARTMENTS = [
@@ -188,20 +189,28 @@ export default function BorrowPage() {
     setQrScanError(null);
     setErrorMessage(null);
 
-    // ตรวจสอบว่า QR Code ตรงกับป้ายที่โต๊ะ IT หรือไม่
+    const rawCode = (scannedCode || "").trim();
+    const upperCode = rawCode.toUpperCase();
+
+    // ตรวจสอบว่า QR Code ตรงกับป้ายที่โต๊ะ IT หรือไม่ (รองรับหลายรูปแบบ)
     const isValidCode =
-      scannedCode === OFFICIAL_QR_VALUE ||
-      scannedCode.includes("IT-RETURN") ||
-      scannedCode === "IT2026";
+      upperCode === OFFICIAL_QR_VALUE ||
+      upperCode === "IT2026" ||
+      upperCode.includes("IT-RETURN") ||
+      upperCode.includes("IT2026") ||
+      upperCode.includes("CODE=IT-RETURN");
 
     if (!isValidCode) {
-      setQrScanError("❌ QR Code ไม่ถูกต้อง! กรุณาสแกนจากป้ายที่เคาน์เตอร์ IT เท่านั้น");
+      const errorMsg = `❌ QR Code ไม่ถูกต้อง! รหัสที่อ่านได้: "${rawCode}" (กรุณาสแกนจากป้ายจุดรับคืนที่เคาน์เตอร์ IT เท่านั้น)`;
+      setQrScanError(errorMsg);
+      setErrorMessage(errorMsg);
       setReturningId(null);
+      alert(`❌ รหัส QR Code ไม่ถูกต้อง!\n\nรหัสที่อ่านได้จากกล้อง: "${rawCode}"\n\nกรุณาส่องกล้องไปที่ป้ายจุดรับคืนอุปกรณ์ของเคาน์เตอร์ IT (IT-RETURN-2026)`);
       return;
     }
 
     try {
-      if (txId.startsWith("demo-tx-")) {
+      if (txId.startsWith("demo-tx-") || txId.startsWith("mock-")) {
         const returnedTx = borrowedItems.find((item) => item.id === txId);
         setBorrowedItems((prev) => prev.filter((item) => item.id !== txId));
         if (returnedTx?.equipment_id) {
@@ -213,9 +222,14 @@ export default function BorrowPage() {
             )
           );
         }
-        setReturnSuccessMsg(`✅ สแกน QR สำเร็จ! คืน '${equipName || "อุปกรณ์"}' เรียบร้อยแล้ว`);
         setIsQrModalOpen(false);
         setActiveReturnTx(null);
+        if (typeof window !== "undefined" && "vibrate" in navigator) {
+          navigator.vibrate?.([100, 50, 100]);
+        }
+        const successNotice = `✅ สแกน QR สำเร็จ! คืน '${equipName || "อุปกรณ์"}' เรียบร้อยแล้ว (โหมดทดสอบ)`;
+        setReturnSuccessMsg(successNotice);
+        alert(successNotice);
         return;
       }
 
@@ -225,7 +239,7 @@ export default function BorrowPage() {
         body: JSON.stringify({
           transaction_id: txId,
           line_user_id: profile?.userId,
-          qr_code: scannedCode,
+          qr_code: rawCode,
         }),
       });
 
@@ -248,9 +262,16 @@ export default function BorrowPage() {
         );
       }
 
-      setReturnSuccessMsg(result.message || `สแกน QR คืน '${equipName || "อุปกรณ์"}' สำเร็จแล้ว!`);
       setIsQrModalOpen(false);
       setActiveReturnTx(null);
+
+      if (typeof window !== "undefined" && "vibrate" in navigator) {
+        navigator.vibrate?.([100, 50, 100]);
+      }
+
+      const finalSuccessMsg = result.message || `สแกน QR คืน '${equipName || "อุปกรณ์"}' สำเร็จเรียบร้อยแล้ว ขอบคุณครับ!`;
+      setReturnSuccessMsg(finalSuccessMsg);
+      alert(`✅ คืนอุปกรณ์สำเร็จ!\n\n${finalSuccessMsg}`);
 
       // ซิงค์ข้อมูลกับฐานข้อมูลในเบื้องหลัง
       if (profile?.userId) {
@@ -260,32 +281,37 @@ export default function BorrowPage() {
         }, 600);
       }
     } catch (err: any) {
-      setQrScanError(err?.message || "เกิดข้อผิดพลาดในการตรวจสอบ QR Code");
+      const errMsg = err?.message || "เกิดข้อผิดพลาดในการตรวจสอบ QR Code";
+      setQrScanError(`❌ คืนอุปกรณ์ไม่สำเร็จ: ${errMsg}`);
+      setErrorMessage(`❌ คืนอุปกรณ์ไม่สำเร็จ: ${errMsg}`);
+      alert(`❌ ทำรายการคืนไม่สำเร็จ:\n\n${errMsg}`);
     } finally {
       setReturningId(null);
     }
   };
 
-  // เรียกใช้กล้องสแกน QR ผ่าน LINE LIFF
+  // เรียกใช้กล้องสแกน QR ผ่าน LINE LIFF หรือเปิด Live Camera Modal
   const triggerQrScanner = async (tx: Transaction) => {
     setActiveReturnTx(tx);
     setQrScanError(null);
+    setErrorMessage(null);
 
-    // 1. ถ้าทำงานอยู่ในแอป LINE บนมือถือ ให้เรียก LIFF Scanner ทันที
-    if (typeof window !== "undefined" && liff.isInClient() && liff.scanCodeV2) {
+    // 1. ถ้าทำงานอยู่ในแอป LINE บนมือถือ ให้ลองเรียก scanCodeV2 ของ LINE ก่อน
+    if (typeof window !== "undefined" && liff.isInClient() && typeof liff.scanCodeV2 === "function") {
       try {
         const res = await liff.scanCodeV2();
-        if (res?.value) {
-          processQrReturn(tx.id, res.value, tx.equipments?.name);
+        const scannedText = typeof res === "string" ? res : res?.value;
+        if (scannedText) {
+          await processQrReturn(tx.id, scannedText, tx.equipments?.name);
+          return;
         }
       } catch (e: any) {
-        console.warn("LINE LIFF scanCodeV2 error/cancelled:", e);
-        setIsQrModalOpen(true);
+        console.warn("LINE LIFF scanCodeV2 error or not enabled in console, falling back to Webview camera modal:", e);
       }
-    } else {
-      // 2. ถ้าเปิดในเบราว์เซอร์คอมพิวเตอร์ / โหมดทดสอบ ให้เปิด Modal สแกน
-      setIsQrModalOpen(true);
     }
+
+    // 2. ถ้าไม่ได้อยู่ใน LINE หรือ scanCodeV2 ไม่รองรับ ให้เปิด Live Camera Viewfinder Modal
+    setIsQrModalOpen(true);
   };
 
   // 1. เริ่มต้นระบบ LINE LIFF เมื่อโหลดหน้าเว็บ
@@ -1032,6 +1058,23 @@ export default function BorrowPage() {
               </div>
             )}
 
+            {/* แจ้งเตือนข้อผิดพลาดในการสแกนคืน */}
+            {qrScanError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start justify-between space-x-2 animate-in fade-in">
+                <div className="flex items-start space-x-2 flex-1">
+                  <XCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                  <div className="leading-relaxed font-medium">{qrScanError}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQrScanError(null)}
+                  className="text-slate-400 hover:text-slate-600 p-0.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
@@ -1143,74 +1186,22 @@ export default function BorrowPage() {
         </div>
       </div>
 
-      {/* MODAL: กล้องสแกน QR Code จุดคืนของ IT (เฉพาะ QR - ไม่มีช่องกรอก PIN) */}
-      {isQrModalOpen && activeReturnTx && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-slate-100 relative">
-            <button
-              type="button"
-              onClick={() => {
-                setIsQrModalOpen(false);
-                setActiveReturnTx(null);
-                setQrScanError(null);
-              }}
-              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 p-1"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="text-center mb-3">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-[#06C755] flex items-center justify-center mx-auto mb-2">
-                <QrCode className="w-6 h-6" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-900">สแกน QR จุดรับคืนอุปกรณ์ IT</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                อุปกรณ์: <span className="font-semibold text-slate-800">{activeReturnTx.equipments?.name}</span>
-              </p>
-            </div>
-
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-center mb-4 space-y-3">
-              <div className="w-20 h-20 bg-white rounded-2xl border-2 border-dashed border-emerald-400 flex items-center justify-center mx-auto shadow-2xs">
-                <QrCode className="w-10 h-10 text-emerald-600 animate-pulse" />
-              </div>
-
-              <p className="text-xs text-slate-600 leading-relaxed">
-                กรุณานำอุปกรณ์มาที่เคาน์เตอร์ IT แล้วส่องกล้องไปที่ <span className="font-semibold text-slate-800">ป้าย QR Code ประจำโต๊ะ IT</span> เพื่อยืนยันการคืน
-              </p>
-
-              {qrScanError && (
-                <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600 text-center font-medium">
-                  {qrScanError}
-                </div>
-              )}
-
-              {/* ปุ่มจำลองการสแกน QR สำหรับกรณีทดสอบบนคอมพิวเตอร์ */}
-              <button
-                type="button"
-                onClick={() =>
-                  processQrReturn(activeReturnTx.id, OFFICIAL_QR_VALUE, activeReturnTx.equipments?.name)
-                }
-                className="w-full py-2.5 px-3 bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-semibold rounded-xl shadow-xs flex items-center justify-center space-x-1.5 transition"
-              >
-                <Check className="w-4 h-4" />
-                <span>จำลองสแกน QR โต๊ะ IT (โหมดทดสอบ)</span>
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setIsQrModalOpen(false);
-                setActiveReturnTx(null);
-                setQrScanError(null);
-              }}
-              className="w-full py-2.5 bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl hover:bg-slate-200 transition"
-            >
-              ยกเลิก
-            </button>
-          </div>
-        </div>
-      )}
+      {/* MODAL: กล้องสแกน QR Code จุดคืนของ IT (Live Viewfinder + Image Upload + Counter confirm) */}
+      <QrScannerModal
+        isOpen={isQrModalOpen && !!activeReturnTx}
+        equipmentName={activeReturnTx?.equipments?.name}
+        isProcessing={returningId === activeReturnTx?.id}
+        onClose={() => {
+          setIsQrModalOpen(false);
+          setActiveReturnTx(null);
+          setQrScanError(null);
+        }}
+        onScanSuccess={(scannedCode) => {
+          if (activeReturnTx) {
+            processQrReturn(activeReturnTx.id, scannedCode, activeReturnTx.equipments?.name);
+          }
+        }}
+      />
     </main>
   );
 }
