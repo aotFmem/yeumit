@@ -485,8 +485,18 @@ export default function AdminDashboardPage() {
     setReturningId(txId);
     try {
       if (txId.startsWith("demo-tx-")) {
+        const loan = activeLoans.find((t) => t.id === txId);
         setActiveLoans((prev) => prev.filter((t) => t.id !== txId));
-        alert(`IT บันทึกรับคืน '${equipName}' เรียบร้อยแล้ว`);
+        if (loan?.equipment_id) {
+          setEquipments((prev) =>
+            prev.map((eq) =>
+              eq.id === loan.equipment_id
+                ? { ...eq, available_stock: Math.min(eq.available_stock + 1, eq.total_stock) }
+                : eq
+            )
+          );
+        }
+        alert(`IT บันทึกรับคืน '${equipName || "อุปกรณ์"}' เรียบร้อยแล้ว`);
         return;
       }
 

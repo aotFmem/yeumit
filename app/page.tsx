@@ -198,7 +198,17 @@ export default function BorrowPage() {
 
     try {
       if (txId.startsWith("demo-tx-")) {
+        const returnedTx = borrowedItems.find((item) => item.id === txId);
         setBorrowedItems((prev) => prev.filter((item) => item.id !== txId));
+        if (returnedTx?.equipment_id) {
+          setEquipments((prev) =>
+            prev.map((eq) =>
+              eq.id === returnedTx.equipment_id
+                ? { ...eq, available_stock: Math.min(eq.available_stock + 1, eq.total_stock) }
+                : eq
+            )
+          );
+        }
         setReturnSuccessMsg(`✅ สแกน QR สำเร็จ! คืน '${equipName || "อุปกรณ์"}' เรียบร้อยแล้ว`);
         setIsQrModalOpen(false);
         setActiveReturnTx(null);

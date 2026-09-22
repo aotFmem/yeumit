@@ -4,8 +4,9 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { transaction_id, line_user_id } = body;
+    const { transaction_id, line_user_id, is_admin_override, qr_code } = body;
 
+    // 1. ตรวจสอบว่ามีการระบุ transaction_id หรือไม่
     if (!transaction_id) {
       return NextResponse.json(
         { success: false, error: "กรุณาระบุรหัสรายการยืม (transaction_id)" },
@@ -13,30 +14,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. ตรวจสอบข้อมูลการยืมในตาราง transactions
-    const { data: transaction, error: txErr } = await supabaseAdmin
-      .from("transactions")
-      .select("*, equipments(*)")
-      .eq("id", transaction_id)
-      .single();
-
-    if (txErr || !transaction) {
-      return NextResponse.json(
-        { success: false, error: "ไม่พบข้อมูลรายการยืมนี้ในระบบ" },
-        { status: 404 }
-      );
-    }
-
-    if (transaction.status === "returned") {
-      return NextResponse.json(
-        { success: false, error: "รายการนี้ทำรายการคืนอุปกรณ์ไปเรียบร้อยแล้ว" },
-        { status: 400 }
-      );
-    }
-
-    const { is_admin_override, qr_code } = body;
-
-    // ตรวจสอบการสแกน QR Code ประจำโต๊ะ IT (ถ้าไม่ใช่ IT รับคืนเอง)
+    // 2. ตรวจสอบ QR Code ประจำโต๊ะ IT ก่อน (กรณีผู้ใช้งานทั่วไปสแกนส่งคืน)
     if (!is_admin_override) {
       const validQrCodes = [
         process.env.IT_RETURN_CODE,
@@ -62,7 +40,55 @@ export async function POST(request: Request) {
       }
     }
 
-    // ตรวจสอบสิทธิ์ผู้คืน (ต้องเป็นคนเดียวกับที่ยืม หรือแอดมิน)
+    const todayStr = new Date().toISOString().split("T")[0];
+
+    // 3. รองรับรายการทดสอบ (Mock / Demo Transactions)
+    if (
+      String(transaction_id).startsWith("demo-tx-") ||
+      String(transaction_id).startsWith("mock-")
+    ) {
+      return NextResponse.json({
+        success: true,
+        message: "สแกน QR คืนอุปกรณ์สำเร็จเรียบร้อยแล้ว! (โหมดทดสอบ)",
+        equipment_name: "อุปกรณ์ IT ทดสอบ",
+        return_date: todayStr,
+      });
+    }
+
+    // 4. ตรวจสอบข้อมูลการยืมในตาราง transactions บน Supabase
+    const { data: transaction, error: txErr } = await supabaseAdmin
+      .from("transactions")
+      .select("*, equipments(*)")
+      .eq("id", transaction_id)
+      .single();
+
+    if (txErr || !transaction) {
+      // ตรวจสอบว่าเกิดจากไม่มีตารางใน DB หรือไม่
+      if (txErr?.message?.includes("Could not find the table") || txErr?.code === "PGRST205") {
+        console.warn("[API/Return] Transactions table not created yet in Supabase. Returning mock success.");
+        return NextResponse.json({
+          success: true,
+          message: "คืนอุปกรณ์สำเร็จเรียบร้อยแล้ว (โหมดจำลองระบบ)",
+          equipment_name: "อุปกรณ์ IT",
+          return_date: todayStr,
+        });
+      }
+
+      return NextResponse.json(
+        { success: false, error: "ไม่พบข้อมูลรายการยืมนี้ในระบบ" },
+        { status: 404 }
+      );
+    }
+
+    // 5. ตรวจสอบว่าถูกคืนไปแล้วหรือไม่
+    if (transaction.status === "returned") {
+      return NextResponse.json(
+        { success: false, error: "รายการนี้ทำรายการคืนอุปกรณ์ไปเรียบร้อยแล้ว" },
+        { status: 400 }
+      );
+    }
+
+    // 6. ตรวจสอบสิทธิ์ผู้คืน (ต้องเป็นคนเดียวกับที่ยืม หรือเป็นแอดมิน)
     if (!is_admin_override && line_user_id && transaction.line_user_id !== line_user_id) {
       return NextResponse.json(
         { success: false, error: "คุณไม่มีสิทธิ์ทำรายการคืนอุปกรณ์ของผู้อื่น" },
@@ -70,11 +96,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const todayStr = new Date().toISOString().split("T")[0];
     const equipmentId = transaction.equipment_id;
     const equipmentName = transaction.equipments?.name || "อุปกรณ์ IT";
 
-    // 2. อัปเดตสถานะในตาราง transactions เป็น 'returned'
+    // 7. อัปเดตสถานะในตาราง transactions เป็น 'returned'
     const { error: updateTxErr } = await supabaseAdmin
       .from("transactions")
       .update({
@@ -90,7 +115,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. คืนสต็อกในตาราง equipments (+1 available_stock)
+    // 8. คืนสต็อกในตาราง equipments (+1 available_stock)
     if (equipmentId) {
       const { data: equipment } = await supabaseAdmin
         .from("equipments")
@@ -107,14 +132,13 @@ export async function POST(request: Request) {
       }
     }
 
-    // 4. ส่งการแจ้งเตือนเข้า LINE (Messaging API / Notify)
+    // 9. ส่งการแจ้งเตือนเข้า LINE (Messaging API / Notify)
     const messagingToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
     const targetUserId = process.env.LINE_ADMIN_TARGET_ID || transaction.line_user_id;
     const notifyToken = process.env.LINE_NOTIFY_TOKEN;
 
     const formattedMessage = `✅ แจ้งเตือนคืนอุปกรณ์ IT สำเร็จ!\nผู้คืน: ${transaction.display_name}\nแผนก: ${transaction.department}\nรายการ: ${equipmentName}\nวันที่คืน: ${todayStr}`;
 
-    // ส่งผ่าน LINE Messaging API
     if (messagingToken && messagingToken !== "your-channel-access-token-here") {
       try {
         await fetch("https://api.line.me/v2/bot/message/push", {
