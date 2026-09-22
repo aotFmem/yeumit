@@ -18,6 +18,9 @@ export interface Transaction {
   borrow_date: string;
   return_date: string | null;
   status: TransactionStatus;
+  time_slot?: string;
+  purpose?: string;
+  internal_phone?: string;
   created_at?: string;
   equipments?: Equipment;
 }
@@ -28,6 +31,9 @@ export interface BorrowRequestPayload {
   department: string;
   equipment_id: string;
   borrow_date: string;
+  time_slot?: string;
+  purpose?: string;
+  internal_phone?: string;
 }
 
 export interface BorrowResponse {

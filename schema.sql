@@ -33,8 +33,16 @@ CREATE TABLE IF NOT EXISTS transactions (
     borrow_date DATE NOT NULL DEFAULT CURRENT_DATE,
     return_date DATE,
     status transaction_status NOT NULL DEFAULT 'borrowed',
+    time_slot TEXT,
+    purpose TEXT,
+    internal_phone TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Ensure columns exist if table was already created
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS time_slot TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS purpose TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS internal_phone TEXT;
 
 -- 5. Create Indexes for High Performance Lookups
 CREATE INDEX IF NOT EXISTS idx_equipments_available_stock ON equipments(available_stock);

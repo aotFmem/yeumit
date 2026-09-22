@@ -5,7 +5,16 @@ import { BorrowRequestPayload } from "@/lib/types";
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as BorrowRequestPayload;
-    const { line_user_id, display_name, department, equipment_id, borrow_date } = body;
+    const {
+      line_user_id,
+      display_name,
+      department,
+      equipment_id,
+      borrow_date,
+      time_slot,
+      purpose,
+      internal_phone,
+    } = body;
 
     // Validate incoming payload
     if (!line_user_id || !display_name || !department || !equipment_id || !borrow_date) {
@@ -82,18 +91,49 @@ export async function POST(request: Request) {
       }
 
       // 3. Insert transaction record using service_role
-      const { data: txData, error: insertErr } = await supabaseAdmin
+      const insertRecord: any = {
+        line_user_id,
+        display_name,
+        department,
+        equipment_id,
+        borrow_date,
+        status: "borrowed",
+      };
+      if (time_slot) insertRecord.time_slot = time_slot;
+      if (purpose) insertRecord.purpose = purpose;
+      if (internal_phone) insertRecord.internal_phone = internal_phone;
+
+      let { data: txData, error: insertErr } = await supabaseAdmin
         .from("transactions")
-        .insert({
-          line_user_id,
-          display_name,
-          department,
-          equipment_id,
-          borrow_date,
-          status: "borrowed",
-        })
+        .insert(insertRecord)
         .select("id")
         .single();
+
+      // If columns are not in DB schema yet, retry with base fields
+      if (insertErr && (insertErr.message.includes("column") || insertErr.code === "42703")) {
+        const deptWithMeta = [
+          department,
+          internal_phone ? `(โทร: ${internal_phone})` : "",
+          time_slot ? `[${time_slot}]` : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        const fallbackRes = await supabaseAdmin
+          .from("transactions")
+          .insert({
+            line_user_id,
+            display_name,
+            department: deptWithMeta,
+            equipment_id,
+            borrow_date,
+            status: "borrowed",
+          })
+          .select("id")
+          .single();
+        txData = fallbackRes.data;
+        insertErr = fallbackRes.error;
+      }
 
       if (insertErr) {
         // Rollback stock decrement if transaction insert fails
@@ -120,7 +160,11 @@ export async function POST(request: Request) {
     const targetUserId = process.env.LINE_ADMIN_TARGET_ID || line_user_id; // Send to Admin ID/Group ID or to borrower directly
     const notifyToken = process.env.LINE_NOTIFY_TOKEN;
 
-    const formattedMessage = `🔔 New Borrow Request! \nName: ${display_name} \nDept: ${department} \nItem: ${equipmentName} \nDate: ${borrowDateFormatted(borrow_date)}`;
+    const timeSlotText = time_slot || "เต็มวัน (08:30 - 16:30 น.)";
+    const purposeText = purpose || "ใช้งานทั่วไปในโรงพยาบาล";
+    const phoneText = internal_phone ? ` (เบอร์ต่อ: ${internal_phone})` : "";
+
+    const formattedMessage = `🔔 มีรายการขอยืมอุปกรณ์ IT ใหม่!\nผู้ยืม: ${display_name}\nแผนก: ${department}${phoneText}\nอุปกรณ์: ${equipmentName}\nวันที่: ${borrowDateFormatted(borrow_date)}\nช่วงเวลา: ${timeSlotText}\nวัตถุประสงค์: ${purposeText}`;
 
     // A. Priority: Modern LINE Messaging API (LINE Official Account / Bot)
     if (messagingToken && messagingToken !== "your-channel-access-token-here") {

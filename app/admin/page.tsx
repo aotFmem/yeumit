@@ -730,7 +730,7 @@ export default function AdminDashboardPage() {
                   Admin Active
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">ระบบจัดการคลังและติดตาม รพช.</p>
+              <p className="text-[11px] text-slate-400">ระบบจัดการคลังและติดตามอุปกรณ์ IT</p>
             </div>
           </div>
 
@@ -1020,10 +1020,25 @@ export default function AdminDashboardPage() {
                             </h3>
                             <p className="text-[11px] font-semibold text-blue-700 truncate mt-0.5">
                               👤 {loan.display_name}
+                              {loan.internal_phone && (
+                                <span className="text-slate-500 font-normal ml-1">
+                                  (โทร: {loan.internal_phone})
+                                </span>
+                              )}
                             </p>
                             <p className="text-[10px] text-slate-500 truncate mt-0.5">
                               🏥 {loan.department}
                             </p>
+                            {loan.time_slot && (
+                              <p className="text-[10px] text-emerald-700 font-medium truncate mt-0.5">
+                                ⏱️ {loan.time_slot}
+                              </p>
+                            )}
+                            {loan.purpose && (
+                              <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                                🎯 {loan.purpose}
+                              </p>
+                            )}
                           </div>
                         </div>
 
@@ -1078,7 +1093,7 @@ export default function AdminDashboardPage() {
                 <h3 className="text-sm font-bold text-slate-900">
                   {formMode === "add" ? "เพิ่มอุปกรณ์ IT ใหม่" : "แก้ไขข้อมูลอุปกรณ์"}
                 </h3>
-                <p className="text-[11px] text-slate-500">จัดการข้อมูลอุปกรณ์ในคลัง IT รพช.</p>
+                <p className="text-[11px] text-slate-500">จัดการข้อมูลอุปกรณ์ในคลัง IT โรงพยาบาล</p>
               </div>
             </div>
 
@@ -1223,7 +1238,7 @@ export default function AdminDashboardPage() {
 
             <h3 className="text-sm font-bold text-slate-900">ป้าย QR จุดรับคืนอุปกรณ์ IT</h3>
             <p className="text-[11px] text-slate-500 mt-0.5 mb-3">
-              ตั้งที่โต๊ะเคาน์เตอร์ IT รพช. ให้ผู้ยืมสแกน
+              ตั้งที่โต๊ะเคาน์เตอร์ IT ให้ผู้ยืมสแกน
             </p>
 
             <div className="p-4 bg-slate-50 rounded-2xl border-2 border-dashed border-emerald-300 inline-block mb-3">

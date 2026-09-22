@@ -34,7 +34,7 @@ import { initializeLiff, closeLiff } from "@/lib/liff";
 import { supabase } from "@/lib/supabaseClient";
 import { Equipment, UserProfile, Transaction } from "@/lib/types";
 
-// รายชื่อกลุ่มงานและแผนกมาตรฐานในโรงพยาบาลชุมชน (รพช.)
+// รายชื่อกลุ่มงานและแผนกมาตรฐานในโรงพยาบาล
 const HOSPITAL_DEPARTMENTS = [
   "กลุ่มงานการพยาบาล - แผนกผู้ป่วยนอก (OPD)",
   "กลุ่มงานการพยาบาล - แผนกอุบัติเหตุและฉุกเฉิน (ER)",
@@ -101,7 +101,7 @@ const FALLBACK_EQUIPMENTS: Equipment[] = [
   },
   {
     id: "e6000000-0000-0000-0000-000000000006",
-    name: "Epson Full HD Mobile Projector (สินค้าหมด)",
+    name: "Epson Full HD Mobile Projector (ถูกยืมหมดแล้ว)",
     image_url:
       "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=600&q=80",
     total_stock: 2,
@@ -158,11 +158,15 @@ export default function BorrowPage() {
     const today = new Date();
     return today.toISOString().split("T")[0];
   });
+  const [timeSlot, setTimeSlot] = useState<string>("ครึ่งวันเช้า (08:30 - 12:00 น.)");
+  const [purpose, setPurpose] = useState<string>("ประชุม / นำเสนอผลงาน (Zoom, Teams)");
+  const [internalPhone, setInternalPhone] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [successData, setSuccessData] = useState<{
     message: string;
     equipmentName: string;
     borrowDate: string;
+    timeSlot?: string;
   } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -402,7 +406,7 @@ export default function BorrowPage() {
     }
 
     if (isOutOfStock) {
-      setErrorMessage("อุปกรณ์ที่เลือกหมดสต็อกแล้ว กรุณาเลือกรายการอื่น");
+      setErrorMessage("อุปกรณ์ที่เลือกถูกยืมหมดแล้วในขณะนี้ กรุณาเลือกอุปกรณ์อื่น");
       return;
     }
 
@@ -418,6 +422,9 @@ export default function BorrowPage() {
           department: department,
           equipment_id: selectedEquipmentId,
           borrow_date: borrowDate,
+          time_slot: timeSlot,
+          purpose: purpose.trim() || "ใช้งานทั่วไปในโรงพยาบาล",
+          internal_phone: internalPhone.trim() || undefined,
         }),
       });
 
@@ -431,6 +438,7 @@ export default function BorrowPage() {
         message: result.message || "บันทึกคำขอยืมอุปกรณ์เรียบร้อยแล้ว!",
         equipmentName: result.transaction?.equipment_name || selectedEquipment?.name || "อุปกรณ์ IT",
         borrowDate: borrowDate,
+        timeSlot: timeSlot,
       });
 
       // รีเฟรชข้อมูล
@@ -514,7 +522,7 @@ export default function BorrowPage() {
             </div>
             <div>
               <h1 className="text-base font-bold text-slate-900 leading-tight">Yeum-IT</h1>
-              <p className="text-[11px] font-medium text-slate-500">ระบบยืม-คืนอุปกรณ์ รพช.</p>
+              <p className="text-[11px] font-medium text-slate-500">ระบบยืม-คืนอุปกรณ์ IT โรงพยาบาล</p>
             </div>
           </div>
 
@@ -668,6 +676,12 @@ export default function BorrowPage() {
                     <span className="text-slate-500">วันที่ยืม:</span>
                     <span className="font-semibold text-slate-800">{successData.borrowDate}</span>
                   </div>
+                  {successData.timeSlot && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">ช่วงเวลา:</span>
+                      <span className="font-semibold text-emerald-700">{successData.timeSlot}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">การแจ้งเตือน:</span>
                     <span className="font-medium text-emerald-600">ส่งข้อความเข้า LINE เรียบร้อย</span>
@@ -690,7 +704,7 @@ export default function BorrowPage() {
               </div>
             ) : (
               <form onSubmit={handleBorrowSubmit} className="space-y-3.5">
-                {/* 1. แผนกในโรงพยาบาลชุมชน */}
+                {/* 1. แผนกในโรงพยาบาล */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
                   <label
                     htmlFor="department"
@@ -698,7 +712,7 @@ export default function BorrowPage() {
                   >
                     <span className="flex items-center space-x-1.5">
                       <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                      <span>แผนก / กลุ่มงาน (รพช.)</span>
+                      <span>แผนก / กลุ่มงาน</span>
                       <span className="text-red-500">*</span>
                     </span>
                     <span className="text-[10px] text-slate-400 font-normal">เลือกจากรายการ</span>
@@ -824,11 +838,11 @@ export default function BorrowPage() {
                                   }`}
                                 >
                                   {outOfStock
-                                    ? "สินค้าหมด"
-                                    : `คงเหลือ ${item.available_stock} ชิ้น`}
+                                    ? "ถูกยืมหมดแล้ว"
+                                    : `ว่าง ${item.available_stock} เครื่อง`}
                                 </span>
                                 <span className="text-[10px] text-slate-400">
-                                  ทั้งหมด {item.total_stock}
+                                  ทั้งหมด {item.total_stock} เครื่อง
                                 </span>
                               </div>
                             </div>
@@ -837,7 +851,7 @@ export default function BorrowPage() {
                             <div className="shrink-0 pl-1">
                               {outOfStock ? (
                                 <span className="text-[10px] font-medium text-rose-500 bg-rose-50 border border-rose-200 px-2 py-1 rounded-lg">
-                                  ของหมด
+                                  ไม่มีเครื่องว่าง
                                 </span>
                               ) : isSelected ? (
                                 <div className="w-6 h-6 rounded-full bg-[#06C755] text-white flex items-center justify-center shadow-xs">
@@ -854,27 +868,120 @@ export default function BorrowPage() {
                   </div>
                 </div>
 
-                {/* 3. วันที่เริ่มยืม */}
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
-                  <label
-                    htmlFor="borrowDate"
-                    className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center space-x-1.5"
-                  >
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    <span>วันที่เริ่มยืมอุปกรณ์</span>
-                    <span className="text-red-500">*</span>
-                  </label>
+                {/* 3. วันที่และช่วงเวลาที่ต้องการยืม */}
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-3">
+                  <div>
+                    <label
+                      htmlFor="borrowDate"
+                      className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center space-x-1.5"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                      <span>วันที่ต้องการใช้งาน</span>
+                      <span className="text-red-500">*</span>
+                    </label>
 
-                  <input
-                    id="borrowDate"
-                    type="date"
-                    required
-                    min={todayStr}
-                    value={borrowDate}
-                    onChange={(e) => setBorrowDate(e.target.value)}
-                    disabled={submitting}
-                    className="w-full px-3.5 py-2.5 bg-white text-slate-900 text-xs rounded-xl border border-slate-300 focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/20 outline-none transition cursor-pointer"
-                  />
+                    <input
+                      id="borrowDate"
+                      type="date"
+                      required
+                      min={todayStr}
+                      value={borrowDate}
+                      onChange={(e) => setBorrowDate(e.target.value)}
+                      disabled={submitting}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 text-slate-900 text-xs rounded-xl border border-slate-300 focus:border-[#06C755] focus:bg-white outline-none transition cursor-pointer"
+                    />
+                  </div>
+
+                  {/* ตัวเลือกช่วงเวลายืม (ครึ่งวันเช้า / บ่าย / เต็มวัน) */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center space-x-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <span>ช่วงเวลาที่ใช้งาน (เพื่อจัดคิวให้ผู้อื่นยืมต่อได้)</span>
+                      <span className="text-red-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { id: "ครึ่งวันเช้า (08:30 - 12:00 น.)", label: "🌅 ครึ่งวันเช้า", desc: "08:30 - 12:00 น." },
+                        { id: "ครึ่งวันบ่าย (13:00 - 16:30 น.)", label: "🌇 ครึ่งวันบ่าย", desc: "13:00 - 16:30 น." },
+                        { id: "เต็มวัน (08:30 - 16:30 น.)", label: "🌕 เต็มวัน", desc: "08:30 - 16:30 น." },
+                        { id: "ยืมหลายวัน / ออกหน่วย", label: "📅 ยืมหลายวัน", desc: "ออกหน่วย / ต่อเนื่อง" },
+                      ].map((slot) => (
+                        <button
+                          key={slot.id}
+                          type="button"
+                          onClick={() => setTimeSlot(slot.id)}
+                          className={`p-2.5 rounded-xl border text-left transition ${
+                            timeSlot === slot.id
+                              ? "bg-emerald-50 border-[#06C755] text-emerald-900 font-semibold shadow-2xs"
+                              : "bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300"
+                          }`}
+                        >
+                          <div className="text-xs">{slot.label}</div>
+                          <div className="text-[10px] text-slate-500 font-normal mt-0.5">{slot.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. วัตถุประสงค์และเบอร์โทรติดต่อ */}
+                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-3">
+                  {/* วัตถุประสงค์การใช้งาน */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center space-x-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-slate-400" />
+                      <span>วัตถุประสงค์การใช้งาน</span>
+                    </label>
+
+                    {/* ชิปตัวเลือกด่วน */}
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {[
+                        "ประชุม Zoom / สสจ.",
+                        "อบรมวิชาการ / ระบบงาน",
+                        "ออกหน่วยตรวจ / คลินิกเคลื่อนที่",
+                        "ใช้งานทดแทนเครื่องส่งซ่อม",
+                      ].map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setPurpose(p)}
+                          className={`px-2.5 py-1 text-[11px] rounded-lg border transition ${
+                            purpose === p
+                              ? "bg-blue-50 text-blue-700 border-blue-300 font-semibold"
+                              : "bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300"
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="หรือระบุรายละเอียดเพิ่มเติม (เช่น ห้องประชุมชั้น 2)..."
+                      value={purpose}
+                      onChange={(e) => setPurpose(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 text-slate-800 text-xs rounded-xl border border-slate-200 focus:border-[#06C755] focus:bg-white outline-none transition"
+                    />
+                  </div>
+
+                  {/* เบอร์ต่อภายใน */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                      <span className="flex items-center space-x-1.5">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        <span>เบอร์โทรศัพท์ / เบอร์ต่อภายในแผนก</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-normal">เพื่อให้ IT ติดต่อง่าย</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น ต่อ 102, ต่อ 204 หรือ 081-xxx-xxxx"
+                      value={internalPhone}
+                      onChange={(e) => setInternalPhone(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 text-slate-800 text-xs rounded-xl border border-slate-200 focus:border-[#06C755] focus:bg-white outline-none transition"
+                    />
+                  </div>
                 </div>
 
                 {/* ปุ่มกดยืนยันการยืม */}
@@ -894,7 +1001,7 @@ export default function BorrowPage() {
                     ) : !selectedEquipmentId ? (
                       <span>กรุณาแตะเลือกอุปกรณ์</span>
                     ) : isOutOfStock ? (
-                      <span>อุปกรณ์ที่เลือกหมดสต็อก</span>
+                      <span>อุปกรณ์ที่เลือกถูกยืมหมดแล้ว</span>
                     ) : (
                       <>
                         <CheckCircle2 className="w-4 h-4" />
