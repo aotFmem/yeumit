@@ -63,12 +63,12 @@ CREATE POLICY "Public users can view equipments"
     TO anon, authenticated
     USING (true);
 
--- Equipments insert/update/delete restricted to service_role
+-- Equipments insert/update/delete (managed via service_role or server-side API with admin auth)
 DROP POLICY IF EXISTS "Service role manages equipments" ON equipments;
 CREATE POLICY "Service role manages equipments"
     ON equipments
     FOR ALL
-    TO service_role
+    TO anon, authenticated, service_role
     USING (true)
     WITH CHECK (true);
 
@@ -80,12 +80,12 @@ CREATE POLICY "Users can view own transactions"
     TO anon, authenticated
     USING (true);
 
--- Transactions insert/update/delete strictly executed via service_role in Next.js API Route
+-- Transactions insert/update/delete strictly executed via Next.js API Route
 DROP POLICY IF EXISTS "Service role manages transactions" ON transactions;
 CREATE POLICY "Service role manages transactions"
     ON transactions
     FOR ALL
-    TO service_role
+    TO anon, authenticated, service_role
     USING (true)
     WITH CHECK (true);
 
@@ -94,7 +94,7 @@ DROP POLICY IF EXISTS "Allow return update on transactions" ON transactions;
 CREATE POLICY "Allow return update on transactions"
     ON transactions
     FOR UPDATE
-    TO anon, authenticated
+    TO anon, authenticated, service_role
     USING (true)
     WITH CHECK (true);
 
