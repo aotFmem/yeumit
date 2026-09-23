@@ -118,35 +118,12 @@ const FALLBACK_EQUIPMENTS: Equipment[] = [
   },
 ];
 
-// รายการยืมจำลองเริ่มต้น
-const INITIAL_MOCK_TRANSACTIONS: Transaction[] = [
-  {
-    id: "demo-tx-001",
-    line_user_id: "U_MOCK_DEV_001",
-    display_name: "พว.สมใจ ใจดี (OPD)",
-    department: "กลุ่มงานการพยาบาล - แผนกผู้ป่วยนอก (OPD)",
-    equipment_id: "e4000000-0000-0000-0000-000000000004",
-    borrow_date: "2026-09-15",
-    return_date: null,
-    status: "borrowed",
-    equipments: {
-      id: "e4000000-0000-0000-0000-000000000004",
-      name: 'iPad Air 11" M2 + Apple Pencil',
-      image_url:
-        "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=600&q=80",
-      total_stock: 3,
-      available_stock: 1,
-    },
-  },
-];
-
 export default function BorrowPage() {
   // สลับแท็บ "ยืมอุปกรณ์" หรือ "คืนอุปกรณ์" (สำหรับผู้ใช้ทั่วไป)
   const [activeTab, setActiveTab] = useState<"borrow" | "return">("borrow");
 
   // สถานะ LIFF & โปรไฟล์ผู้ใช้
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [isMock, setIsMock] = useState(false);
   const [isLiffLoading, setIsLiffLoading] = useState(true);
 
   // สถานะการยืม (Borrow Tab)
@@ -160,7 +137,7 @@ export default function BorrowPage() {
     return today.toISOString().split("T")[0];
   });
   const [timeSlot, setTimeSlot] = useState<string>("ครึ่งวันเช้า (08:30 - 12:00 น.)");
-  const [purpose, setPurpose] = useState<string>("ประชุม / นำเสนอผลงาน (Zoom, Teams)");
+  const [purpose, setPurpose] = useState<string>("อื่นๆ");
   const [internalPhone, setInternalPhone] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [successData, setSuccessData] = useState<{
@@ -210,29 +187,6 @@ export default function BorrowPage() {
     }
 
     try {
-      if (txId.startsWith("demo-tx-") || txId.startsWith("mock-")) {
-        const returnedTx = borrowedItems.find((item) => item.id === txId);
-        setBorrowedItems((prev) => prev.filter((item) => item.id !== txId));
-        if (returnedTx?.equipment_id) {
-          setEquipments((prev) =>
-            prev.map((eq) =>
-              eq.id === returnedTx.equipment_id
-                ? { ...eq, available_stock: Math.min(eq.available_stock + 1, eq.total_stock) }
-                : eq
-            )
-          );
-        }
-        setIsQrModalOpen(false);
-        setActiveReturnTx(null);
-        if (typeof window !== "undefined" && "vibrate" in navigator) {
-          navigator.vibrate?.([100, 50, 100]);
-        }
-        const successNotice = `✅ สแกน QR สำเร็จ! คืน '${equipName || "อุปกรณ์"}' เรียบร้อยแล้ว (โหมดทดสอบ)`;
-        setReturnSuccessMsg(successNotice);
-        alert(successNotice);
-        return;
-      }
-
       const res = await fetch("/api/return", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -320,7 +274,6 @@ export default function BorrowPage() {
       try {
         const result = await initializeLiff();
         setProfile(result.profile);
-        setIsMock(result.isMock);
       } catch (err) {
         console.error("LIFF initialization error:", err);
       } finally {
@@ -366,17 +319,13 @@ export default function BorrowPage() {
         .eq("status", "borrowed")
         .order("borrow_date", { ascending: false });
 
-      if (error || !data || data.length === 0) {
-        if (isMock) {
-          setBorrowedItems(INITIAL_MOCK_TRANSACTIONS);
-        } else {
-          setBorrowedItems([]);
-        }
+      if (error || !data) {
+        setBorrowedItems([]);
       } else {
         setBorrowedItems(data);
       }
     } catch {
-      if (isMock) setBorrowedItems(INITIAL_MOCK_TRANSACTIONS);
+      setBorrowedItems([]);
     } finally {
       setIsLoadingBorrowed(false);
     }
@@ -386,7 +335,7 @@ export default function BorrowPage() {
     if (profile?.userId) {
       fetchUserBorrowedItems(profile.userId);
     }
-  }, [profile, isMock]);
+  }, [profile]);
 
   // 4. ระบบนับถอยหลังปิดหน้าต่างเมื่อทำรายการยืมสำเร็จ
   useEffect(() => {
@@ -562,18 +511,11 @@ export default function BorrowPage() {
               <Shield className="w-4 h-4 text-slate-700" />
             </Link>
 
-            {/* ป้ายสถานะ LINE */}
-            {isMock ? (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200/80">
-                <Sparkles className="w-3 h-3 mr-1 text-amber-500" />
-                โหมดทดสอบ
-              </span>
-            ) : (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#06C755] mr-1.5 animate-pulse" />
-                LINE ออนไลน์
-              </span>
-            )}
+            {/* ป้ายสถานะระบบ */}
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#06C755] mr-1.5 animate-pulse" />
+              พร้อมใช้งาน
+            </span>
           </div>
         </div>
       </header>
@@ -966,6 +908,7 @@ export default function BorrowPage() {
                         "อบรมวิชาการ / ระบบงาน",
                         "ออกหน่วยตรวจ / คลินิกเคลื่อนที่",
                         "ใช้งานทดแทนเครื่องส่งซ่อม",
+                        "อื่นๆ",
                       ].map((p) => (
                         <button
                           key={p}
@@ -984,7 +927,7 @@ export default function BorrowPage() {
 
                     <input
                       type="text"
-                      placeholder="หรือระบุรายละเอียดเพิ่มเติม (เช่น ห้องประชุมชั้น 2)..."
+                      placeholder="ระบุวัตถุประสงค์ (เช่น อื่นๆ, ประชุม, นำเสนอผลงาน)..."
                       value={purpose}
                       onChange={(e) => setPurpose(e.target.value)}
                       className="w-full px-3 py-2 bg-slate-50 text-slate-800 text-xs rounded-xl border border-slate-200 focus:border-[#06C755] focus:bg-white outline-none transition"

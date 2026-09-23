@@ -1,9 +1,28 @@
 import { NextResponse } from "next/server";
-import { verifyAdminCredentials, getAdminPasscode } from "@/lib/adminAuth";
+import { verifyAdminCredentials, generateAdminToken } from "@/lib/adminAuth";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimiter";
 import { AdminAuthVerifyRequest } from "@/lib/types";
 
 export async function POST(request: Request) {
   try {
+    const clientIp = getClientIp(request);
+
+    // 1. ตรวจสอบ Rate Limit ป้องกันการสุ่มรหัสผ่าน (Brute-Force Protection)
+    const rateLimit = checkRateLimit(`admin-verify:${clientIp}`, {
+      limit: 6,
+      windowMs: 5 * 60 * 1000, // 6 attempts per 5 minutes
+    });
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `คุณพยายามเข้าสู่ระบบมากเกินไป กรุณารอ ${rateLimit.retryAfterSeconds} วินาทีก่อนลองใหม่อีกครั้ง`,
+        },
+        { status: 429 }
+      );
+    }
+
     const body = (await request.json()) as AdminAuthVerifyRequest;
     const { passcode, line_user_id } = body;
 
@@ -19,8 +38,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Generate session token
-    const token = `yeum-it-admin-token-${Buffer.from(getAdminPasscode()).toString("base64")}`;
+    // 2. สร้าง Token เข้ารหัส HMAC ปลอดภัย
+    const token = generateAdminToken();
 
     return NextResponse.json({
       success: true,

@@ -3,67 +3,16 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isRequestAdminAuthorized } from "@/lib/adminAuth";
 import { Equipment } from "@/lib/types";
 
-// รายการอุปกรณ์สำรอง (เมื่อยังไม่ได้เชื่อมต่อ Supabase หรืออยู่ในโหมดทดสอบ)
-const FALLBACK_EQUIPMENTS: Equipment[] = [
-  {
-    id: "e1000000-0000-0000-0000-000000000001",
-    name: 'MacBook Pro 14" M3 (Space Gray)',
-    image_url:
-      "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=600&q=80",
-    total_stock: 5,
-    available_stock: 3,
-  },
-  {
-    id: "e2000000-0000-0000-0000-000000000002",
-    name: "Dell XPS 15 (Core i7, 32GB RAM)",
-    image_url:
-      "https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?auto=format&fit=crop&w=600&q=80",
-    total_stock: 4,
-    available_stock: 2,
-  },
-  {
-    id: "e3000000-0000-0000-0000-000000000003",
-    name: 'Dell UltraSharp 27" 4K Monitor',
-    image_url:
-      "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=600&q=80",
-    total_stock: 6,
-    available_stock: 4,
-  },
-  {
-    id: "e4000000-0000-0000-0000-000000000004",
-    name: 'iPad Air 11" M2 + Apple Pencil',
-    image_url:
-      "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=600&q=80",
-    total_stock: 3,
-    available_stock: 1,
-  },
-  {
-    id: "e5000000-0000-0000-0000-000000000005",
-    name: "Logitech MX Master 3S Wireless Mouse",
-    image_url:
-      "https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?auto=format&fit=crop&w=600&q=80",
-    total_stock: 10,
-    available_stock: 8,
-  },
-  {
-    id: "e6000000-0000-0000-0000-000000000006",
-    name: "Epson Full HD Mobile Projector",
-    image_url:
-      "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=600&q=80",
-    total_stock: 2,
-    available_stock: 0,
-  },
-  {
-    id: "e7000000-0000-0000-0000-000000000007",
-    name: "Anker 12-in-1 USB-C Docking Station",
-    image_url:
-      "https://images.unsplash.com/photo-1622445262464-84b14e4b7501?auto=format&fit=crop&w=600&q=80",
-    total_stock: 5,
-    available_stock: 5,
-  },
-];
+// Helper สำหรับ Sanitize ข้อความ
+function sanitizeInput(val: any, maxLength = 100): string {
+  if (typeof val !== "string") return "";
+  return val
+    .trim()
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, "")
+    .slice(0, maxLength);
+}
 
-// GET: ดึงรายการอุปกรณ์ทั้งหมด
+// GET: ดึงรายการอุปกรณ์ทั้งหมด (Admin view)
 export async function GET(request: Request) {
   try {
     const { data, error } = await supabaseAdmin
@@ -71,29 +20,28 @@ export async function GET(request: Request) {
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (error || !data || data.length === 0) {
-      return NextResponse.json({
-        success: true,
-        source: "fallback",
-        equipments: FALLBACK_EQUIPMENTS,
-      });
+    if (error) {
+      console.error("[API/Admin/Equipments/GET] Supabase error:", error.message);
+      return NextResponse.json(
+        { success: false, error: `ไม่สามารถดึงข้อมูลอุปกรณ์ได้: ${error.message}` },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
       success: true,
-      source: "database",
-      equipments: data,
+      equipments: data || [],
     });
-  } catch {
-    return NextResponse.json({
-      success: true,
-      source: "fallback",
-      equipments: FALLBACK_EQUIPMENTS,
-    });
+  } catch (error: any) {
+    console.error("[API/Admin/Equipments/GET] Unexpected error:", error);
+    return NextResponse.json(
+      { success: false, error: error?.message || "เกิดข้อผิดพลาดในการดึงข้อมูลอุปกรณ์" },
+      { status: 500 }
+    );
   }
 }
 
-// POST: เพิ่มอุปกรณ์ใหม่
+// POST: เพิ่มอุปกรณ์ใหม่ (ต้องมี Admin Authorization)
 export async function POST(request: Request) {
   if (!isRequestAdminAuthorized(request)) {
     return NextResponse.json(
@@ -106,7 +54,10 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { name, image_url, total_stock } = body;
 
-    if (!name || typeof name !== "string" || name.trim().length === 0) {
+    const cleanName = sanitizeInput(name, 100);
+    const cleanImageUrl = image_url ? String(image_url).trim().slice(0, 500) : null;
+
+    if (!cleanName) {
       return NextResponse.json(
         { success: false, error: "กรุณาระบุชื่ออุปกรณ์ IT" },
         { status: 400 }
@@ -114,16 +65,16 @@ export async function POST(request: Request) {
     }
 
     const stockNumber = parseInt(total_stock, 10);
-    if (isNaN(stockNumber) || stockNumber < 1) {
+    if (isNaN(stockNumber) || stockNumber < 1 || stockNumber > 9999) {
       return NextResponse.json(
-        { success: false, error: "จำนวนสต็อกทั้งหมดต้องมีอย่างน้อย 1 ชิ้น" },
+        { success: false, error: "จำนวนสต็อกทั้งหมดต้องเป็นตัวเลขระหว่าง 1 - 9,999" },
         { status: 400 }
       );
     }
 
     const newRecord = {
-      name: name.trim(),
-      image_url: image_url?.trim() || null,
+      name: cleanName,
+      image_url: cleanImageUrl,
       total_stock: stockNumber,
       available_stock: stockNumber,
     };
@@ -135,19 +86,11 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
-      console.warn("[API/Equipments/POST] Supabase error:", error.message);
-      // ถ้าไม่มีตารางใน DB ให้จำลองผลลัพธ์
-      const mockCreated: Equipment = {
-        id: `mock-eq-${Date.now()}`,
-        ...newRecord,
-        created_at: new Date().toISOString(),
-      };
-      return NextResponse.json({
-        success: true,
-        equipment: mockCreated,
-        source: "mock",
-        message: `เพิ่ม '${newRecord.name}' เรียบร้อยแล้ว (โหมดตัวอย่าง)`,
-      });
+      console.error("[API/Admin/Equipments/POST] Supabase error:", error.message);
+      return NextResponse.json(
+        { success: false, error: `ไม่สามารถเพิ่มอุปกรณ์ลงฐานข้อมูลได้: ${error.message}` },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
@@ -156,7 +99,7 @@ export async function POST(request: Request) {
       message: `เพิ่มอุปกรณ์ '${data.name}' เข้าสู่ระบบเรียบร้อยแล้ว`,
     });
   } catch (error: any) {
-    console.error("[API/Equipments/POST] Unexpected error:", error);
+    console.error("[API/Admin/Equipments/POST] Unexpected error:", error);
     return NextResponse.json(
       { success: false, error: error?.message || "เกิดข้อผิดพลาดในการเพิ่มอุปกรณ์" },
       { status: 500 }
@@ -164,7 +107,7 @@ export async function POST(request: Request) {
   }
 }
 
-// PUT: แก้ไขข้อมูลอุปกรณ์
+// PUT: แก้ไขข้อมูลอุปกรณ์ (ต้องมี Admin Authorization)
 export async function PUT(request: Request) {
   if (!isRequestAdminAuthorized(request)) {
     return NextResponse.json(
@@ -177,78 +120,80 @@ export async function PUT(request: Request) {
     const body = await request.json();
     const { id, name, image_url, total_stock } = body;
 
-    if (!id) {
+    const cleanId = sanitizeInput(id, 64);
+    const cleanName = sanitizeInput(name, 100);
+    const cleanImageUrl = image_url ? String(image_url).trim().slice(0, 500) : null;
+
+    if (!cleanId) {
       return NextResponse.json(
         { success: false, error: "กรุณาระบุรหัสอุปกรณ์ (id)" },
         { status: 400 }
       );
     }
 
-    if (!name || typeof name !== "string" || name.trim().length === 0) {
+    if (!cleanName) {
       return NextResponse.json(
         { success: false, error: "กรุณาระบุชื่ออุปกรณ์ IT" },
         { status: 400 }
       );
     }
 
-    const stockNumber = parseInt(total_stock, 10);
-    if (isNaN(stockNumber) || stockNumber < 1) {
+    const newTotalStock = parseInt(total_stock, 10);
+    if (isNaN(newTotalStock) || newTotalStock < 0 || newTotalStock > 9999) {
       return NextResponse.json(
-        { success: false, error: "จำนวนสต็อกทั้งหมดต้องมีอย่างน้อย 1 ชิ้น" },
+        { success: false, error: "จำนวนสต็อกต้องเป็นตัวเลขที่ถูกต้อง (>= 0)" },
         { status: 400 }
       );
     }
 
-    // ตรวจสอบสต็อกเดิมและจำนวนที่กำลังถูกยืมอยู่
-    const { data: existing } = await supabaseAdmin
+    // ดึงข้อมูลปัจจุบันมาคำนวณ available_stock ใหม่
+    const { data: current, error: getErr } = await supabaseAdmin
       .from("equipments")
       .select("total_stock, available_stock")
-      .eq("id", id)
+      .eq("id", cleanId)
       .single();
 
-    let newAvailableStock = stockNumber;
-
-    if (existing) {
-      const currentlyBorrowed = Math.max(0, existing.total_stock - existing.available_stock);
-      if (stockNumber < currentlyBorrowed) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `ไม่สามารถปรับสต็อกทั้งหมดเป็น ${stockNumber} ชิ้นได้ เนื่องจากมีผู้ยืมไปแล้ว ${currentlyBorrowed} ชิ้น`,
-          },
-          { status: 400 }
-        );
-      }
-      newAvailableStock = stockNumber - currentlyBorrowed;
+    if (getErr || !current) {
+      return NextResponse.json(
+        { success: false, error: "ไม่พบข้อมูลอุปกรณ์นี้ในระบบ" },
+        { status: 404 }
+      );
     }
 
+    const borrowedCount = Math.max(0, current.total_stock - current.available_stock);
+
+    if (newTotalStock < borrowedCount) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `ไม่สามารถปรับสต็อกรวมให้น้อยกว่าจำนวนที่กำลังถูกยืมอยู่ (${borrowedCount} เครื่อง) ได้`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const newAvailableStock = newTotalStock - borrowedCount;
+
     const updatePayload = {
-      name: name.trim(),
-      image_url: image_url?.trim() || null,
-      total_stock: stockNumber,
+      name: cleanName,
+      image_url: cleanImageUrl,
+      total_stock: newTotalStock,
       available_stock: newAvailableStock,
     };
 
     const { data, error } = await supabaseAdmin
       .from("equipments")
       .update(updatePayload)
-      .eq("id", id)
+      .eq("id", cleanId)
       .select()
       .single();
 
     if (error) {
-      console.warn("[API/Equipments/PUT] Supabase error:", error.message);
-      // จำลองการแก้ไข
-      const mockUpdated: Equipment = {
-        id,
-        ...updatePayload,
-      };
-      return NextResponse.json({
-        success: true,
-        equipment: mockUpdated,
-        source: "mock",
-        message: `อัปเดตข้อมูล '${name}' เรียบร้อยแล้ว (โหมดตัวอย่าง)`,
-      });
+      console.error("[API/Admin/Equipments/PUT] Supabase error:", error.message);
+      return NextResponse.json(
+        { success: false, error: `ไม่สามารถอัปเดตข้อมูลอุปกรณ์ได้: ${error.message}` },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
@@ -257,7 +202,7 @@ export async function PUT(request: Request) {
       message: `อัปเดตข้อมูล '${data.name}' เรียบร้อยแล้ว`,
     });
   } catch (error: any) {
-    console.error("[API/Equipments/PUT] Unexpected error:", error);
+    console.error("[API/Admin/Equipments/PUT] Unexpected error:", error);
     return NextResponse.json(
       { success: false, error: error?.message || "เกิดข้อผิดพลาดในการแก้ไขข้อมูล" },
       { status: 500 }
@@ -265,7 +210,7 @@ export async function PUT(request: Request) {
   }
 }
 
-// DELETE: ลบอุปกรณ์ (ตรวจสอบ active loan ก่อนลบเสมอ)
+// DELETE: ลบอุปกรณ์ (ต้องมี Admin Authorization)
 export async function DELETE(request: Request) {
   if (!isRequestAdminAuthorized(request)) {
     return NextResponse.json(
@@ -276,7 +221,7 @@ export async function DELETE(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
+    const id = sanitizeInput(searchParams.get("id"), 64);
 
     if (!id) {
       return NextResponse.json(
@@ -310,7 +255,7 @@ export async function DELETE(request: Request) {
       .eq("id", id);
 
     if (deleteError) {
-      // ตรวจสอบ Foreign Key constraint (เคยมีประวัติการยืมในอดีต)
+      // Foreign Key constraint
       if (deleteError.code === "23503" || deleteError.message.includes("violates foreign key")) {
         return NextResponse.json(
           {
@@ -322,12 +267,11 @@ export async function DELETE(request: Request) {
         );
       }
 
-      console.warn("[API/Equipments/DELETE] Supabase error:", deleteError.message);
-      return NextResponse.json({
-        success: true,
-        source: "mock",
-        message: "ลบอุปกรณ์ออกจากระบบเรียบร้อยแล้ว (โหมดตัวอย่าง)",
-      });
+      console.error("[API/Admin/Equipments/DELETE] Supabase error:", deleteError.message);
+      return NextResponse.json(
+        { success: false, error: `ไม่สามารถลบอุปกรณ์ได้: ${deleteError.message}` },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
@@ -335,7 +279,7 @@ export async function DELETE(request: Request) {
       message: "ลบอุปกรณ์ออกจากระบบเรียบร้อยแล้ว",
     });
   } catch (error: any) {
-    console.error("[API/Equipments/DELETE] Unexpected error:", error);
+    console.error("[API/Admin/Equipments/DELETE] Unexpected error:", error);
     return NextResponse.json(
       { success: false, error: error?.message || "เกิดข้อผิดพลาดในการลบอุปกรณ์" },
       { status: 500 }

@@ -1,9 +1,37 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimiter";
 import { BorrowRequestPayload } from "@/lib/types";
+
+// Helper สำหรับตัดข้อความและลบอักขระควบคุม (Sanitize input)
+function sanitizeString(val: any, maxLength = 100): string {
+  if (typeof val !== "string") return "";
+  return val
+    .trim()
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") // strip control characters
+    .slice(0, maxLength);
+}
 
 export async function POST(request: Request) {
   try {
+    const clientIp = getClientIp(request);
+
+    // 1. ตรวจสอบ Rate Limit ป้องกันการกดสแปมรัว
+    const rateLimit = checkRateLimit(`borrow:${clientIp}`, {
+      limit: 15,
+      windowMs: 60 * 1000, // 15 requests per minute
+    });
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `ทำรายการถี่เกินไป กรุณารอ ${rateLimit.retryAfterSeconds} วินาทีก่อนลองใหม่อีกครั้ง`,
+        },
+        { status: 429 }
+      );
+    }
+
     const body = (await request.json()) as BorrowRequestPayload;
     const {
       line_user_id,
@@ -16,13 +44,36 @@ export async function POST(request: Request) {
       internal_phone,
     } = body;
 
-    // Validate incoming payload
-    if (!line_user_id || !display_name || !department || !equipment_id || !borrow_date) {
+    // 2. ตรวจสอบและ Sanitize ข้อมูลที่ส่งเข้ามา
+    const cleanLineUserId = sanitizeString(line_user_id, 64);
+    const cleanDisplayName = sanitizeString(display_name, 100);
+    const cleanDepartment = sanitizeString(department, 100);
+    const cleanEquipmentId = sanitizeString(equipment_id, 64);
+    const cleanBorrowDate = sanitizeString(borrow_date, 20);
+    const cleanTimeSlot = sanitizeString(time_slot, 100);
+    const cleanPurpose = sanitizeString(purpose, 250);
+    const cleanInternalPhone = sanitizeString(internal_phone, 50);
+
+    if (
+      !cleanLineUserId ||
+      !cleanDisplayName ||
+      !cleanDepartment ||
+      !cleanEquipmentId ||
+      !cleanBorrowDate
+    ) {
       return NextResponse.json(
         {
           success: false,
-          error: "Missing required fields: line_user_id, display_name, department, equipment_id, borrow_date",
+          error: "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน (ชื่อ, แผนก, อุปกรณ์, วันที่ยืม)",
         },
+        { status: 400 }
+      );
+    }
+
+    // ตรวจสอบรูปแบบวันที่ ISO YYYY-MM-DD
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanBorrowDate)) {
+      return NextResponse.json(
+        { success: false, error: "รูปแบบวันที่ไม่ถูกต้อง (ต้องเป็น YYYY-MM-DD)" },
         { status: 400 }
       );
     }
@@ -30,78 +81,76 @@ export async function POST(request: Request) {
     let equipmentName = "IT Equipment";
     let transactionId = "";
 
-    // Attempt atomic borrowing via PostgreSQL function first
+    // 3. ทำรายการยืมผ่าน PostgreSQL Atomic Function ก่อน (ป้องกัน Race Condition / แย่งสต็อก)
     const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc("borrow_equipment_atomic", {
-      p_line_user_id: line_user_id,
-      p_display_name: display_name,
-      p_department: department,
-      p_equipment_id: equipment_id,
-      p_borrow_date: borrow_date,
+      p_line_user_id: cleanLineUserId,
+      p_display_name: cleanDisplayName,
+      p_department: cleanDepartment,
+      p_equipment_id: cleanEquipmentId,
+      p_borrow_date: cleanBorrowDate,
     });
 
     if (rpcError) {
-      // If RPC doesn't exist or failed with specific error, handle gracefully
       if (rpcError.message.includes("Equipment is out of stock")) {
         return NextResponse.json(
-          { success: false, error: "The selected equipment is currently out of stock." },
+          { success: false, error: "อุปกรณ์ที่เลือกถูกยืมหมดแล้ว" },
           { status: 400 }
         );
       }
 
-      // Fallback to standard Supabase Service Role query & updates
       console.warn(
         "[API/Borrow] Atomic RPC failed or not installed. Falling back to direct service_role queries:",
         rpcError.message
       );
 
-      // 1. Fetch equipment and verify stock
+      // Fallback: ดึงข้อมูลอุปกรณ์และตรวจสอบสต็อก
       const { data: equipment, error: fetchErr } = await supabaseAdmin
         .from("equipments")
         .select("id, name, available_stock")
-        .eq("id", equipment_id)
+        .eq("id", cleanEquipmentId)
         .single();
 
       if (fetchErr || !equipment) {
         return NextResponse.json(
-          { success: false, error: "Equipment not found or could not be verified." },
+          { success: false, error: "ไม่พบข้อมูลอุปกรณ์นี้ในระบบ" },
           { status: 404 }
         );
       }
 
       if (equipment.available_stock <= 0) {
         return NextResponse.json(
-          { success: false, error: `Sorry, '${equipment.name}' is currently out of stock.` },
+          { success: false, error: `ขออภัย '${equipment.name}' ถูกยืมหมดแล้ว` },
           { status: 400 }
         );
       }
 
       equipmentName = equipment.name;
 
-      // 2. Decrement available stock using service_role
+      // หักสต็อกอุปกรณ์ (-1)
       const { error: updateErr } = await supabaseAdmin
         .from("equipments")
         .update({ available_stock: equipment.available_stock - 1 })
-        .eq("id", equipment_id);
+        .eq("id", cleanEquipmentId);
 
       if (updateErr) {
         return NextResponse.json(
-          { success: false, error: `Failed to update equipment inventory: ${updateErr.message}` },
+          { success: false, error: `ไม่สามารถอัปเดตสต็อกได้: ${updateErr.message}` },
           { status: 500 }
         );
       }
 
-      // 3. Insert transaction record using service_role
+      // บันทึกรายการยืมลงตาราง transactions
       const insertRecord: any = {
-        line_user_id,
-        display_name,
-        department,
-        equipment_id,
-        borrow_date,
+        line_user_id: cleanLineUserId,
+        display_name: cleanDisplayName,
+        department: cleanDepartment,
+        equipment_id: cleanEquipmentId,
+        borrow_date: cleanBorrowDate,
         status: "borrowed",
       };
-      if (time_slot) insertRecord.time_slot = time_slot;
-      if (purpose) insertRecord.purpose = purpose;
-      if (internal_phone) insertRecord.internal_phone = internal_phone;
+      if (cleanTimeSlot) insertRecord.time_slot = cleanTimeSlot;
+      if (cleanPurpose) insertRecord.purpose = cleanPurpose;
+      if (cleanInternalPhone) insertRecord.internal_phone = cleanInternalPhone;
 
       let { data: txData, error: insertErr } = await supabaseAdmin
         .from("transactions")
@@ -109,12 +158,12 @@ export async function POST(request: Request) {
         .select("id")
         .single();
 
-      // If columns are not in DB schema yet, retry with base fields
+      // หากตารางยังไม่มีคอลัมน์ใหม่ ให้ fallback บันทึกลง field พื้นฐาน
       if (insertErr && (insertErr.message.includes("column") || insertErr.code === "42703")) {
         const deptWithMeta = [
-          department,
-          internal_phone ? `(โทร: ${internal_phone})` : "",
-          time_slot ? `[${time_slot}]` : "",
+          cleanDepartment,
+          cleanInternalPhone ? `(โทร: ${cleanInternalPhone})` : "",
+          cleanTimeSlot ? `[${cleanTimeSlot}]` : "",
         ]
           .filter(Boolean)
           .join(" ");
@@ -122,11 +171,11 @@ export async function POST(request: Request) {
         const fallbackRes = await supabaseAdmin
           .from("transactions")
           .insert({
-            line_user_id,
-            display_name,
+            line_user_id: cleanLineUserId,
+            display_name: cleanDisplayName,
             department: deptWithMeta,
-            equipment_id,
-            borrow_date,
+            equipment_id: cleanEquipmentId,
+            borrow_date: cleanBorrowDate,
             status: "borrowed",
           })
           .select("id")
@@ -136,14 +185,14 @@ export async function POST(request: Request) {
       }
 
       if (insertErr) {
-        // Rollback stock decrement if transaction insert fails
+        // Rollback สต็อกถ้าบันทึกรายการยืมไม่สำเร็จ
         await supabaseAdmin
           .from("equipments")
           .update({ available_stock: equipment.available_stock })
-          .eq("id", equipment_id);
+          .eq("id", cleanEquipmentId);
 
         return NextResponse.json(
-          { success: false, error: `Failed to record transaction: ${insertErr.message}` },
+          { success: false, error: `ไม่สามารถบันทึกรายการยืมได้: ${insertErr.message}` },
           { status: 500 }
         );
       }
@@ -154,19 +203,19 @@ export async function POST(request: Request) {
       equipmentName = rpcData?.equipment_name || "IT Equipment";
     }
 
-    // 4. Send Notification (Supports modern LINE Messaging API & legacy LINE Notify)
+    // 4. ส่งการแจ้งเตือนเข้า LINE (Messaging API / Notify)
     let notifySuccess = false;
     const messagingToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-    const targetUserId = process.env.LINE_ADMIN_TARGET_ID || line_user_id; // Send to Admin ID/Group ID or to borrower directly
+    const targetUserId = process.env.LINE_ADMIN_TARGET_ID || cleanLineUserId;
     const notifyToken = process.env.LINE_NOTIFY_TOKEN;
 
-    const timeSlotText = time_slot || "เต็มวัน (08:30 - 16:30 น.)";
-    const purposeText = purpose || "ใช้งานทั่วไปในโรงพยาบาล";
-    const phoneText = internal_phone ? ` (เบอร์ต่อ: ${internal_phone})` : "";
+    const timeSlotText = cleanTimeSlot || "เต็มวัน (08:30 - 16:30 น.)";
+    const purposeText = cleanPurpose || "ใช้งานทั่วไปในโรงพยาบาล";
+    const phoneText = cleanInternalPhone ? ` (เบอร์ต่อ: ${cleanInternalPhone})` : "";
 
-    const formattedMessage = `🔔 มีรายการขอยืมอุปกรณ์ IT ใหม่!\nผู้ยืม: ${display_name}\nแผนก: ${department}${phoneText}\nอุปกรณ์: ${equipmentName}\nวันที่: ${borrowDateFormatted(borrow_date)}\nช่วงเวลา: ${timeSlotText}\nวัตถุประสงค์: ${purposeText}`;
+    const formattedMessage = `🔔 มีรายการขอยืมอุปกรณ์ IT ใหม่!\nผู้ยืม: ${cleanDisplayName}\nแผนก: ${cleanDepartment}${phoneText}\nอุปกรณ์: ${equipmentName}\nวันที่: ${borrowDateFormatted(cleanBorrowDate)}\nช่วงเวลา: ${timeSlotText}\nวัตถุประสงค์: ${purposeText}`;
 
-    // A. Priority: Modern LINE Messaging API (LINE Official Account / Bot)
+    // A. LINE Messaging API
     if (messagingToken && messagingToken !== "your-channel-access-token-here") {
       try {
         const lineApiRes = await fetch("https://api.line.me/v2/bot/message/push", {
@@ -177,27 +226,18 @@ export async function POST(request: Request) {
           },
           body: JSON.stringify({
             to: targetUserId,
-            messages: [
-              {
-                type: "text",
-                text: formattedMessage,
-              },
-            ],
+            messages: [{ type: "text", text: formattedMessage }],
           }),
         });
 
         if (lineApiRes.ok) {
           notifySuccess = true;
-          console.info("[API/Borrow] LINE Messaging API push sent successfully to:", targetUserId);
-        } else {
-          const errText = await lineApiRes.text();
-          console.warn("[API/Borrow] LINE Messaging API returned non-OK status:", lineApiRes.status, errText);
         }
       } catch (lineErr) {
         console.error("[API/Borrow] LINE Messaging API dispatch error:", lineErr);
       }
     }
-    // B. Fallback: Legacy LINE Notify (Discontinued after March 31, 2025)
+    // B. LINE Notify (Fallback)
     else if (notifyToken && notifyToken !== "your-line-notify-token-here") {
       try {
         const params = new URLSearchParams();
@@ -214,34 +254,26 @@ export async function POST(request: Request) {
 
         if (notifyRes.ok) {
           notifySuccess = true;
-          console.info("[API/Borrow] LINE Notify dispatched successfully.");
-        } else {
-          const errText = await notifyRes.text();
-          console.warn("[API/Borrow] LINE Notify returned non-OK status:", notifyRes.status, errText);
         }
       } catch (notifyErr) {
         console.error("[API/Borrow] LINE Notify dispatch failed:", notifyErr);
       }
-    } else {
-      console.info(
-        "[API/Borrow] Neither LINE_CHANNEL_ACCESS_TOKEN nor LINE_NOTIFY_TOKEN is configured. Skipped sending notification."
-      );
     }
 
     return NextResponse.json({
       success: true,
-      message: "IT Equipment borrow request confirmed!",
+      message: `บันทึกรายการขอยืม '${equipmentName}' เรียบร้อยแล้ว`,
       transaction: {
         id: transactionId,
         equipment_name: equipmentName,
-        borrow_date,
+        borrow_date: cleanBorrowDate,
       },
       notifySent: notifySuccess,
     });
   } catch (error: any) {
     console.error("[API/Borrow] Unexpected error:", error);
     return NextResponse.json(
-      { success: false, error: error?.message || "Internal server error occurred." },
+      { success: false, error: error?.message || "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" },
       { status: 500 }
     );
   }
@@ -250,7 +282,7 @@ export async function POST(request: Request) {
 function borrowDateFormatted(dateStr: string): string {
   try {
     const d = new Date(dateStr);
-    return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    return d.toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" });
   } catch {
     return dateStr;
   }

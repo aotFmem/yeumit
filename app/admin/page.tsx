@@ -142,64 +142,6 @@ const INITIAL_FALLBACK_EQUIPMENTS: Equipment[] = [
   },
 ];
 
-// รายการยืมจำลองเริ่มต้น
-const INITIAL_MOCK_TRANSACTIONS: Transaction[] = [
-  {
-    id: "demo-tx-001",
-    line_user_id: "U_MOCK_DEV_001",
-    display_name: "พว.สมใจ ใจดี (OPD)",
-    department: "กลุ่มงานการพยาบาล - แผนกผู้ป่วยนอก (OPD)",
-    equipment_id: "e4000000-0000-0000-0000-000000000004",
-    borrow_date: "2026-09-15",
-    return_date: null,
-    status: "borrowed",
-    equipments: {
-      id: "e4000000-0000-0000-0000-000000000004",
-      name: 'iPad Air 11" M2 + Apple Pencil',
-      image_url:
-        "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=600&q=80",
-      total_stock: 3,
-      available_stock: 1,
-    },
-  },
-  {
-    id: "demo-tx-002",
-    line_user_id: "U_MOCK_USER_002",
-    display_name: "นพ.วิชาญ บริรักษ์ (ER)",
-    department: "กลุ่มงานการพยาบาล - แผนกอุบัติเหตุและฉุกเฉิน (ER)",
-    equipment_id: "e1000000-0000-0000-0000-000000000001",
-    borrow_date: "2026-09-14",
-    return_date: null,
-    status: "borrowed",
-    equipments: {
-      id: "e1000000-0000-0000-0000-000000000001",
-      name: 'MacBook Pro 14" M3 (Space Gray)',
-      image_url:
-        "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=600&q=80",
-      total_stock: 5,
-      available_stock: 3,
-    },
-  },
-  {
-    id: "demo-tx-003",
-    line_user_id: "U_MOCK_USER_003",
-    display_name: "ภก.ธนกร โอสถ (เภสัชกรรม)",
-    department: "กลุ่มงานเภสัชกรรมและคุ้มครองผู้บริโภค",
-    equipment_id: "e6000000-0000-0000-0000-000000000006",
-    borrow_date: "2026-09-16",
-    return_date: null,
-    status: "borrowed",
-    equipments: {
-      id: "e6000000-0000-0000-0000-000000000006",
-      name: "Epson Full HD Mobile Projector",
-      image_url:
-        "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=600&q=80",
-      total_stock: 2,
-      available_stock: 0,
-    },
-  },
-];
-
 export default function AdminDashboardPage() {
   // --- สถานะการตรวจสอบสิทธิ์ Admin ---
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -344,13 +286,13 @@ export default function AdminDashboardPage() {
     try {
       // 1. ดึงรายการอุปกรณ์ผ่าน API /api/admin/equipments
       const eqRes = await fetch("/api/admin/equipments", {
-        headers: { "x-admin-token": adminToken || "admin1234" },
+        headers: { "x-admin-token": adminToken || "" },
       });
       const eqResult = await eqRes.json();
       if (eqRes.ok && eqResult.equipments && eqResult.equipments.length > 0) {
         setEquipments(eqResult.equipments);
       } else {
-        // Fallback จาก Supabase client หรือ Fallback data
+        // ดึงจาก Supabase client
         const { data: eqData } = await supabase.from("equipments").select("*");
         if (eqData && eqData.length > 0) {
           setEquipments(eqData);
@@ -367,13 +309,12 @@ export default function AdminDashboardPage() {
         .order("borrow_date", { ascending: true });
 
       if (txErr || !txData || txData.length === 0) {
-        setActiveLoans(INITIAL_MOCK_TRANSACTIONS);
+        setActiveLoans([]);
       } else {
         setActiveLoans(txData);
       }
     } catch {
-      setEquipments(INITIAL_FALLBACK_EQUIPMENTS);
-      setActiveLoans(INITIAL_MOCK_TRANSACTIONS);
+      setActiveLoans([]);
     } finally {
       setLoading(false);
     }
@@ -548,25 +489,12 @@ export default function AdminDashboardPage() {
 
     setReturningId(txId);
     try {
-      if (txId.startsWith("demo-tx-")) {
-        const loan = activeLoans.find((t) => t.id === txId);
-        setActiveLoans((prev) => prev.filter((t) => t.id !== txId));
-        if (loan?.equipment_id) {
-          setEquipments((prev) =>
-            prev.map((eq) =>
-              eq.id === loan.equipment_id
-                ? { ...eq, available_stock: Math.min(eq.available_stock + 1, eq.total_stock) }
-                : eq
-            )
-          );
-        }
-        alert(`IT บันทึกรับคืน '${equipName || "อุปกรณ์"}' เรียบร้อยแล้ว`);
-        return;
-      }
-
       const res = await fetch("/api/return", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-token": adminToken || "",
+        },
         body: JSON.stringify({
           transaction_id: txId,
           is_admin_override: true,

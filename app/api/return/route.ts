@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { isRequestAdminAuthorized } from "@/lib/adminAuth";
 
 export async function POST(request: Request) {
   try {
@@ -7,15 +8,31 @@ export async function POST(request: Request) {
     const { transaction_id, line_user_id, is_admin_override, qr_code } = body;
 
     // 1. ตรวจสอบว่ามีการระบุ transaction_id หรือไม่
-    if (!transaction_id) {
+    if (!transaction_id || typeof transaction_id !== "string") {
       return NextResponse.json(
         { success: false, error: "กรุณาระบุรหัสรายการยืม (transaction_id)" },
         { status: 400 }
       );
     }
 
-    // 2. ตรวจสอบ QR Code ประจำโต๊ะ IT ก่อน (กรณีผู้ใช้งานทั่วไปสแกนส่งคืน)
-    if (!is_admin_override) {
+    // 2. ตรวจสอบสิทธิ์ Admin อย่างเข้มงวด
+    // หากมีการส่ง is_admin_override ต้องมี Header ยืนยันสิทธิ์ Admin ที่ถูกต้องเท่านั้น
+    let isAdmin = false;
+    if (is_admin_override) {
+      if (!isRequestAdminAuthorized(request)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "ไม่มีสิทธิ์ทำรายการในฐานะผู้ดูแลระบบ (Admin Authorization Required)",
+          },
+          { status: 401 }
+        );
+      }
+      isAdmin = true;
+    }
+
+    // 3. ตรวจสอบ QR Code ประจำโต๊ะ IT (กรณีผู้ใช้งานทั่วไปสแกนส่งคืน)
+    if (!isAdmin) {
       const validQrCodes = [
         process.env.IT_RETURN_CODE,
         "IT-RETURN-2026",
@@ -42,19 +59,6 @@ export async function POST(request: Request) {
 
     const todayStr = new Date().toISOString().split("T")[0];
 
-    // 3. รองรับรายการทดสอบ (Mock / Demo Transactions)
-    if (
-      String(transaction_id).startsWith("demo-tx-") ||
-      String(transaction_id).startsWith("mock-")
-    ) {
-      return NextResponse.json({
-        success: true,
-        message: "สแกน QR คืนอุปกรณ์สำเร็จเรียบร้อยแล้ว! (โหมดทดสอบ)",
-        equipment_name: "อุปกรณ์ IT ทดสอบ",
-        return_date: todayStr,
-      });
-    }
-
     // 4. ตรวจสอบข้อมูลการยืมในตาราง transactions บน Supabase
     const { data: transaction, error: txErr } = await supabaseAdmin
       .from("transactions")
@@ -63,17 +67,6 @@ export async function POST(request: Request) {
       .single();
 
     if (txErr || !transaction) {
-      // ตรวจสอบว่าเกิดจากไม่มีตารางใน DB หรือไม่
-      if (txErr?.message?.includes("Could not find the table") || txErr?.code === "PGRST205") {
-        console.warn("[API/Return] Transactions table not created yet in Supabase. Returning mock success.");
-        return NextResponse.json({
-          success: true,
-          message: "คืนอุปกรณ์สำเร็จเรียบร้อยแล้ว (โหมดจำลองระบบ)",
-          equipment_name: "อุปกรณ์ IT",
-          return_date: todayStr,
-        });
-      }
-
       return NextResponse.json(
         { success: false, error: "ไม่พบข้อมูลรายการยืมนี้ในระบบ" },
         { status: 404 }
@@ -88,19 +81,21 @@ export async function POST(request: Request) {
       );
     }
 
-    // 6. ตรวจสอบสิทธิ์ผู้คืน (ต้องเป็นคนเดียวกับที่ยืม หรือเป็นแอดมิน)
-    if (!is_admin_override && line_user_id && transaction.line_user_id !== line_user_id) {
-      return NextResponse.json(
-        { success: false, error: "คุณไม่มีสิทธิ์ทำรายการคืนอุปกรณ์ของผู้อื่น" },
-        { status: 403 }
-      );
+    // 6. ตรวจสอบสิทธิ์ผู้คืน (ต้องเป็นเจ้าของรายการ หรือเป็นแอดมินที่มีสิทธิ์)
+    if (!isAdmin) {
+      if (!line_user_id || transaction.line_user_id !== line_user_id) {
+        return NextResponse.json(
+          { success: false, error: "คุณไม่มีสิทธิ์ทำรายการคืนอุปกรณ์ของผู้อื่น" },
+          { status: 403 }
+        );
+      }
     }
 
     const equipmentId = transaction.equipment_id;
     const equipmentName = transaction.equipments?.name || "อุปกรณ์ IT";
 
     // 7. อัปเดตสถานะในตาราง transactions เป็น 'returned'
-    // A. ทดลองเรียกใช้ atomic RPC function ก่อน (ทำงานแบบ SECURITY DEFINER ข้ามข้อจำกัด RLS)
+    // A. ทดลองเรียกใช้ atomic RPC function ก่อน
     let atomicSuccess = false;
     try {
       const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc("return_equipment_atomic", {
@@ -112,19 +107,18 @@ export async function POST(request: Request) {
         atomicSuccess = true;
       }
     } catch {
-      // RPC not installed, will fallback to direct update
+      // RPC fallback to direct update
     }
 
-    // B. Fallback: หาก RPC ไม่ได้ติดตั้ง ให้ทำ direct update พร้อม .select()
+    // B. Fallback: Direct update พร้อม .select()
     if (!atomicSuccess) {
-      const { data: updatedRows, error: updateTxErr } = await supabaseAdmin
+      const { error: updateTxErr } = await supabaseAdmin
         .from("transactions")
         .update({
           status: "returned",
           return_date: todayStr,
         })
-        .eq("id", transaction_id)
-        .select();
+        .eq("id", transaction_id);
 
       if (updateTxErr) {
         return NextResponse.json(
