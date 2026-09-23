@@ -36,18 +36,19 @@ import { Equipment, UserProfile, Transaction } from "@/lib/types";
 import QrScannerModal from "@/components/QrScannerModal";
 
 const HOSPITAL_DEPARTMENTS = [
-  "กลุ่มงานการพยาบาล - แผนกผู้ป่วยนอก (OPD)",
-  "กลุ่มงานการพยาบาล - แผนกอุบัติเหตุและฉุกเฉิน (ER)",
-  "กลุ่มงานการพยาบาล - แผนกผู้ป่วยใน (IPD)",
-  "กลุ่มงานเวชปฏิบัติครอบครัวและบริการด้านปฐมภูมิ (PCU)",
+  "ผู้ป่วยนอก (OPD)",
+  "อุบัติเหตุและฉุกเฉิน (ER)",
+  "ผู้ป่วยใน (IPD)",
+  "เวชปฏิบัติครอบครัวและบริการด้านปฐมภูมิ (PCU)",
   "ทันตกรรม",
-  "กลุ่มงานเทคนิคการแพทย์ (ห้องแล็บ / LAB)",
-  "กลุ่มงานรังสีการแพทย์ (เอกซเรย์ / X-Ray)",
-  "กลุ่มงานกายภาพบำบัด",
-  "กลุ่มงานโภชนศาสตร์",
-  "กลุ่มงานประกันสุขภาพ ยุทธศาสตร์ และสารสนเทศ (IT)",
-  "กลุ่มงานบริหารทั่วไป",
-  "แผนกอื่นๆ / บุคลากรภายนอก",
+  "สุขภาพจิต",
+  "เทคนิคการแพทย์ (ห้องแล็บ / LAB)",
+  "รังสีการแพทย์ (เอกซเรย์ / X-Ray)",
+  "กายภาพบำบัด",
+  "โภชนศาสตร์",
+  "ประกันสุขภาพ ยุทธศาสตร์ และสารสนเทศ (IT)",
+  "บริหารทั่วไป",
+  "อื่นๆ / บุคลากรภายนอก",
 ];
 
 // รายการอุปกรณ์จำลอง
@@ -363,7 +364,7 @@ export default function BorrowPage() {
     }
 
     if (!department) {
-      setErrorMessage("กรุณาเลือกแผนก / กลุ่มงานของคุณ");
+      setErrorMessage("กรุณาเลือกแผนกของคุณ");
       return;
     }
 
@@ -672,7 +673,7 @@ export default function BorrowPage() {
                   >
                     <span className="flex items-center space-x-1.5">
                       <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                      <span>แผนก / กลุ่มงาน</span>
+                      <span>แผนก</span>
                       <span className="text-red-500">*</span>
                     </span>
                     <span className="text-[10px] text-slate-400 font-normal">เลือกจากรายการ</span>
@@ -688,7 +689,7 @@ export default function BorrowPage() {
                       className="w-full px-3.5 py-2.5 bg-white text-slate-900 text-xs rounded-xl border border-slate-300 focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/20 outline-none transition appearance-none cursor-pointer"
                     >
                       <option value="" disabled>
-                        -- เลือกแผนก / กลุ่มงานในโรงพยาบาล --
+                        -- เลือกแผนกในโรงพยาบาล --
                       </option>
                       {HOSPITAL_DEPARTMENTS.map((dept) => (
                         <option key={dept} value={dept}>
