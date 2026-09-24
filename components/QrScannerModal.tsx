@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { X, Camera, Image as ImageIcon, CheckCircle, AlertCircle, RefreshCw, Loader2, QrCode } from "lucide-react";
+import { X, Camera, Image as ImageIcon, AlertCircle, RefreshCw, Loader2, QrCode } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 
 interface QrScannerModalProps {
@@ -92,7 +92,7 @@ export default function QrScannerModal({
           setCameraError(
             err?.message?.includes("Permission")
               ? "กรุณาอนุญาตการเข้าถึงกล้อง เพื่อสแกน QR Code"
-              : "ไม่สามารถเปิดกล้องได้ กรุณาเลือกสแกนจากภาพถ่ายหรือปุ่มยืนยันด้านล่าง"
+              : "ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตการเข้าถึงกล้อง หรือเลือกอัปโหลดจากรูปภาพ"
           );
         }
       }
@@ -238,10 +238,10 @@ export default function QrScannerModal({
         </div>
 
         <p className="text-[11px] text-slate-500 text-center mb-3">
-          ส่องกล้องไปที่ <span className="font-semibold text-slate-800">ป้าย QR Code ที่โต๊ะ IT</span> (รหัส: IT-RETURN-2026)
+          ส่องกล้องไปที่ <span className="font-semibold text-slate-800">ป้าย QR Code ณ จุดรับคืนห้อง IT</span> เพื่อยืนยันการคืน
         </p>
 
-        {/* แถบตัวเลือกสำรอง (รูปภาพ / ยืนยันที่เคาน์เตอร์) */}
+        {/* ตัวเลือกสำรอง: อัปโหลดรูปภาพป้าย QR Code */}
         <div className="w-full space-y-2">
           {/* ซ่อน file input สำหรับเลือกภาพจาก Gallery */}
           <input
@@ -252,35 +252,19 @@ export default function QrScannerModal({
             onChange={handleFileChange}
           />
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isProcessing || isScanningFile}
-              className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-700 text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-1.5"
-            >
-              {isScanningFile ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-600" />
-              ) : (
-                <ImageIcon className="w-3.5 h-3.5 text-slate-600" />
-              )}
-              <span>เลือกจากภาพถ่าย</span>
-            </button>
-
-            {/* ปุ่มยืนยันคืนด่วนสำหรับทดสอบ / เจ้าหน้าที่หน้าเคาน์เตอร์ */}
-            <button
-              type="button"
-              onClick={() => {
-                cleanupScanner();
-                onScanSuccess("IT-RETURN-2026");
-              }}
-              disabled={isProcessing}
-              className="py-2.5 px-3 bg-[#06C755] hover:bg-[#05b34c] active:scale-98 text-white text-xs font-semibold rounded-xl shadow-xs transition flex items-center justify-center space-x-1"
-            >
-              <CheckCircle className="w-3.5 h-3.5" />
-              <span>ยืนยันที่เคาน์เตอร์ IT</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isProcessing || isScanningFile}
+            className="w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-700 text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-1.5"
+          >
+            {isScanningFile ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-600" />
+            ) : (
+              <ImageIcon className="w-3.5 h-3.5 text-slate-600" />
+            )}
+            <span>เลือกจากภาพถ่ายป้าย QR Code</span>
+          </button>
 
           <button
             type="button"

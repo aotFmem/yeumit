@@ -290,7 +290,7 @@ export default function AdminDashboardPage() {
       }
 
       setIsAuthenticated(true);
-      const token = data.token || "admin1234";
+      const token = data.token || "";
       setAdminToken(token);
       sessionStorage.setItem(ADMIN_STORAGE_KEY, token);
       localStorage.setItem(ADMIN_STORAGE_KEY, token);
@@ -360,7 +360,7 @@ export default function AdminDashboardPage() {
         method,
         headers: {
           "Content-Type": "application/json",
-          "x-admin-token": adminToken || "admin1234",
+          "x-admin-token": adminToken || "",
         },
         body: JSON.stringify(body),
       });
@@ -399,7 +399,7 @@ export default function AdminDashboardPage() {
       const res = await fetch(`/api/admin/equipments?id=${encodeURIComponent(eq.id)}`, {
         method: "DELETE",
         headers: {
-          "x-admin-token": adminToken || "admin1234",
+          "x-admin-token": adminToken || "",
         },
       });
 
@@ -612,14 +612,6 @@ export default function AdminDashboardPage() {
               )}
             </button>
           </form>
-
-          {/* Hint Card */}
-          <div className="mt-5 p-3 bg-slate-800/40 rounded-xl border border-slate-800 text-[11px] text-slate-400 text-center">
-            💡 รหัสผ่านเริ่มต้นสำหรับทดสอบระบบ:{" "}
-            <code className="px-1.5 py-0.5 bg-slate-800 text-blue-400 rounded font-mono font-bold">
-              admin1234
-            </code>
-          </div>
 
           {/* Back to User Home */}
           <div className="mt-6 text-center">

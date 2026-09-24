@@ -362,42 +362,6 @@ export default function BorrowPage() {
     }
   };
 
-  // ส่งคำขอคืนอุปกรณ์ (ยกเลิกระบบ PIN คืนได้ทันที)
-  const handleDirectReturn = async (txId: string, equipName?: string) => {
-    if (!profile) return;
-    if (!confirm(`ยืนยันการคืน '${equipName || "อุปกรณ์"}' นี้เข้าห้อง IT?`)) {
-      return;
-    }
-
-    setReturningId(txId);
-    setReturnSuccessMsg(null);
-    setErrorMessage(null);
-
-    try {
-      const res = await fetch("/api/return", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transaction_id: txId,
-          line_user_id: profile.userId,
-        }),
-      });
-
-      const result = await res.json();
-      if (!res.ok || !result.success) {
-        throw new Error(result.error || "ไม่สามารถทำรายการคืนอุปกรณ์ได้");
-      }
-
-      setReturnSuccessMsg(result.message || `คืน '${equipName || "อุปกรณ์"}' สำเร็จแล้ว!`);
-      fetchUserBorrowedItems(profile.userId);
-      fetchEquipments();
-    } catch (err: any) {
-      setErrorMessage(err?.message || "เกิดข้อผิดพลาดในการคืนอุปกรณ์ กรุณาลองใหม่");
-    } finally {
-      setReturningId(null);
-    }
-  };
-
   // คำนวณจำนวนวันที่ยืมมาแล้ว
   const calculateDaysBorrowed = (dateStr: string) => {
     try {
@@ -918,7 +882,7 @@ export default function BorrowPage() {
         )}
 
         {/* ========================================================================= */}
-        {/* แท็บที่ 2: ระบบคืนอุปกรณ์ (แบบไม่มี PIN - คืนได้ทันที 1-Click Return) */}
+        {/* แท็บที่ 2: ระบบคืนอุปกรณ์ด้วยการสแกน QR Code */}
         {/* ========================================================================= */}
         {activeTab === "return" && (
           <div className="space-y-3">
@@ -1058,7 +1022,7 @@ export default function BorrowPage() {
         </div>
       </div>
 
-      {/* MODAL: กล้องสแกน QR Code จุดคืนของ IT (Live Viewfinder + Image Upload + Counter confirm) */}
+      {/* MODAL: กล้องสแกน QR Code จุดรับคืนอุปกรณ์ IT (Live Camera / Photo Upload) */}
       <QrScannerModal
         isOpen={isQrModalOpen && !!activeReturnTx}
         equipmentName={activeReturnTx?.equipments?.name}

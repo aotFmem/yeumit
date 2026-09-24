@@ -10,10 +10,10 @@ export interface LiffInitResult {
 }
 
 const MOCK_PROFILE: UserProfile = {
-  userId: "U_MOCK_DEV_001",
-  displayName: "Somchai Developer (Dev Mock)",
+  userId: "U_HOSPITAL_STAFF_001",
+  displayName: "เจ้าหน้าที่ผู้ใช้งาน",
   pictureUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80",
-  statusMessage: "Developing IT Borrowing System locally",
+  statusMessage: "เจ้าหน้าที่โรงพยาบาล",
 };
 
 /**
