@@ -65,9 +65,9 @@ export async function POST(request: Request) {
     }
 
     const stockNumber = parseInt(total_stock, 10);
-    if (isNaN(stockNumber) || stockNumber < 1 || stockNumber > 9999) {
+    if (isNaN(stockNumber) || stockNumber < 0 || stockNumber > 9999) {
       return NextResponse.json(
-        { success: false, error: "จำนวนสต็อกทั้งหมดต้องเป็นตัวเลขระหว่าง 1 - 9,999" },
+        { success: false, error: "จำนวนสต็อกทั้งหมดต้องเป็นตัวเลขระหว่าง 0 - 9,999" },
         { status: 400 }
       );
     }

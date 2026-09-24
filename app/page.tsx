@@ -288,8 +288,9 @@ export default function BorrowPage() {
   const selectedEquipment = equipments.find((item) => item.id === selectedEquipmentId);
   const isOutOfStock = selectedEquipment ? selectedEquipment.available_stock <= 0 : false;
 
-  // กรองรายการอุปกรณ์ตามช่องค้นหา
-  const filteredEquipments = equipments.filter((item) =>
+  // กรองรายการอุปกรณ์: ซ่อนอุปกรณ์ที่ปลดระวาง/สต็อกรวมเป็น 0 ชิ้น และค้นหาตามชื่อ
+  const activeEquipments = equipments.filter((item) => item.total_stock > 0);
+  const filteredEquipments = activeEquipments.filter((item) =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -642,8 +643,8 @@ export default function BorrowPage() {
                       </div>
                     ) : filteredEquipments.length === 0 ? (
                       <div className="py-6 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                        {equipments.length === 0
-                          ? "ยังไม่มีรายการอุปกรณ์ในระบบ (กรุณาติดต่อเจ้าหน้าที่ IT)"
+                        {activeEquipments.length === 0
+                          ? "ยังไม่มีรายการอุปกรณ์ที่พร้อมเปิดให้ยืมในขณะนี้"
                           : "ไม่พบอุปกรณ์ที่ค้นหา"}
                       </div>
                     ) : (

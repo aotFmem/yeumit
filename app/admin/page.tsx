@@ -339,8 +339,8 @@ export default function AdminDashboardPage() {
       alert("กรุณากรอกชื่ออุปกรณ์");
       return;
     }
-    if (formStock < 1) {
-      alert("จำนวนสต็อกทั้งหมดต้องมีอย่างน้อย 1 ชิ้น");
+    if (formStock < 0) {
+      alert("จำนวนสต็อกทั้งหมดต้องไม่ติดลบ (0 ชิ้นขึ้นไป)");
       return;
     }
 
@@ -822,24 +822,32 @@ export default function AdminDashboardPage() {
 
                           {/* สถิติสต็อก */}
                           <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px]">
-                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-medium rounded-lg">
-                              ทั้งหมด <b>{eq.total_stock}</b> ชิ้น
-                            </span>
-
-                            {eq.available_stock > 0 ? (
-                              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold rounded-lg">
-                                ว่าง {eq.available_stock} ชิ้น
+                            {eq.total_stock === 0 ? (
+                              <span className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-300 font-semibold rounded-lg flex items-center space-x-1">
+                                <span>🚫 เลิกใช้งาน (0 ชิ้น)</span>
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 font-semibold rounded-lg">
-                                ของหมด
-                              </span>
-                            )}
+                              <>
+                                <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-medium rounded-lg">
+                                  ทั้งหมด <b>{eq.total_stock}</b> ชิ้น
+                                </span>
 
-                            {borrowed > 0 && (
-                              <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 font-medium rounded-lg">
-                                ถูกยืม {borrowed}
-                              </span>
+                                {eq.available_stock > 0 ? (
+                                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold rounded-lg">
+                                    ว่าง {eq.available_stock} ชิ้น
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 font-semibold rounded-lg">
+                                    ของหมด
+                                  </span>
+                                )}
+
+                                {borrowed > 0 && (
+                                  <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 font-medium rounded-lg">
+                                    ถูกยืม {borrowed}
+                                  </span>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
@@ -1045,15 +1053,15 @@ export default function AdminDashboardPage() {
                 </label>
                 <input
                   type="number"
-                  min="1"
+                  min="0"
                   max="999"
                   value={formStock}
-                  onChange={(e) => setFormStock(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  onChange={(e) => setFormStock(Math.max(0, parseInt(e.target.value, 10) || 0))}
                   className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 outline-none transition"
                   required
                 />
                 <span className="text-[10px] text-slate-400 mt-0.5 block">
-                  ระบุจำนวนเครื่อง/ชิ้นทั้งหมดที่มีในโรงพยาบาล
+                  ระบุจำนวนเครื่อง/ชิ้นทั้งหมดที่มีในโรงพยาบาล (หากเลิกใช้งานแล้ว ให้ระบุเป็น 0 ชิ้น)
                 </span>
               </div>
 
