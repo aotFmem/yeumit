@@ -1569,36 +1569,71 @@ export default function AdminDashboardPage() {
                     />
                   </div>
 
-                  {/* สถานะเครื่อง */}
+                  {/* หมายเหตุ */}
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                      หมายเหตุ / สเปคเครื่อง
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น RAM 16GB, เมาส์บลูทูธในกระเป๋า"
+                      value={itemNoteInput}
+                      onChange={(e) => setItemNoteInput(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
+                    />
+                  </div>
+
+                  {/* สถานะเครื่อง (Segmented Button Chips พร้อมจุดสี CSS - แก้ไขปัญหาไอคอนไม่แสดงผลบน Windows) */}
+                  <div className="sm:col-span-2 pt-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1.5">
                       สถานะเครื่อง
                     </label>
-                    <select
-                      value={itemStatusInput}
-                      onChange={(e) => setItemStatusInput(e.target.value as ItemStatus)}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
-                    >
-                      <option value="available">🟢 ว่าง (พร้อมยืม)</option>
-                      <option value="borrowed">🟡 ถูกยืมอยู่</option>
-                      <option value="maintenance">🔴 ส่งซ่อม (Maintenance)</option>
-                      <option value="retired">⚪ ปลดระวาง (Retired)</option>
-                    </select>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                      {[
+                        {
+                          id: "available",
+                          label: "ว่าง (พร้อมยืม)",
+                          activeClass: "border-emerald-500 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500/20 font-bold",
+                          dot: "bg-emerald-500",
+                        },
+                        {
+                          id: "borrowed",
+                          label: "ถูกยืมอยู่",
+                          activeClass: "border-amber-500 bg-amber-50 text-amber-800 ring-2 ring-amber-500/20 font-bold",
+                          dot: "bg-amber-500",
+                        },
+                        {
+                          id: "maintenance",
+                          label: "ส่งซ่อม",
+                          activeClass: "border-rose-500 bg-rose-50 text-rose-800 ring-2 ring-rose-500/20 font-bold",
+                          dot: "bg-rose-500",
+                        },
+                        {
+                          id: "retired",
+                          label: "ปลดระวาง",
+                          activeClass: "border-slate-400 bg-slate-100 text-slate-700 ring-2 ring-slate-400/20 font-bold",
+                          dot: "bg-slate-400",
+                        },
+                      ].map((st) => {
+                        const isSelected = itemStatusInput === st.id;
+                        return (
+                          <button
+                            key={st.id}
+                            type="button"
+                            onClick={() => setItemStatusInput(st.id as ItemStatus)}
+                            className={`py-2 px-2 rounded-xl border text-xs transition flex items-center justify-center space-x-1.5 select-none ${
+                              isSelected
+                                ? `${st.activeClass} shadow-2xs`
+                                : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                            }`}
+                          >
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${st.dot}`} />
+                            <span className="truncate">{st.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-
-                {/* หมายเหตุ */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                    หมายเหตุ / สเปคเครื่อง
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="เช่น RAM 16GB, เมาส์บลูทูธในกระเป๋า"
-                    value={itemNoteInput}
-                    onChange={(e) => setItemNoteInput(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
-                  />
                 </div>
 
                 {/* ปุ่มกดยืนยันในฟอร์ม */}
@@ -1649,25 +1684,29 @@ export default function AdminDashboardPage() {
                   const isDeleting = deletingItemId === item.id;
 
                   let statusBadge = (
-                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-semibold rounded-md">
+                    <span className="inline-flex items-center px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-semibold rounded-md">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 shrink-0" />
                       ว่าง (พร้อมยืม)
                     </span>
                   );
                   if (item.status === "borrowed") {
                     statusBadge = (
-                      <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-semibold rounded-md">
+                      <span className="inline-flex items-center px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-semibold rounded-md">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5 shrink-0" />
                         ถูกยืมอยู่
                       </span>
                     );
                   } else if (item.status === "maintenance") {
                     statusBadge = (
-                      <span className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-semibold rounded-md">
+                      <span className="inline-flex items-center px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-semibold rounded-md">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5 shrink-0" />
                         ส่งซ่อม
                       </span>
                     );
                   } else if (item.status === "retired") {
                     statusBadge = (
-                      <span className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-semibold rounded-md">
+                      <span className="inline-flex items-center px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-semibold rounded-md">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400 mr-1.5 shrink-0" />
                         ปลดระวาง
                       </span>
                     );
