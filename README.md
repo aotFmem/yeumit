@@ -61,8 +61,7 @@ LINE_NOTIFY_TOKEN=your-line-notify-token
 3. Copy and run the entire contents of [`schema.sql`](./schema.sql).
    - This creates the `equipments` and `transactions` tables.
    - Sets up Row Level Security (RLS) policies.
-   - Creates the `borrow_equipment_atomic` function to prevent race conditions.
-   - Populates initial IT equipment items (MacBook, Dell laptops, monitors, accessories).
+   - Creates atomic stored procedures (`borrow_equipment_atomic`, `return_equipment_atomic`) to prevent race conditions.
 
 ### 4. Setup LINE LIFF
 

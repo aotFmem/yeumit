@@ -207,15 +207,3 @@ BEGIN
 END;
 $$;
 
--- 10. Seed Sample IT Equipment Data
-INSERT INTO equipments (name, image_url, total_stock, available_stock)
-VALUES
-    ('MacBook Pro 14" M3 (Space Gray)', 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=600&q=80', 5, 3),
-    ('Dell XPS 15 (Core i7, 32GB RAM)', 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?auto=format&fit=crop&w=600&q=80', 4, 2),
-    ('Dell UltraSharp 27" 4K Monitor', 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=600&q=80', 6, 4),
-    ('iPad Air 11" M2 + Apple Pencil', 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=600&q=80', 3, 1),
-    ('Logitech MX Master 3S Wireless Mouse', 'https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?auto=format&fit=crop&w=600&q=80', 10, 8),
-    ('Epson Full HD Mobile Projector', 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=600&q=80', 2, 0), -- Out of stock test case
-    ('Anker 12-in-1 USB-C Docking Station', 'https://images.unsplash.com/photo-1622445262464-84b14e4b7501?auto=format&fit=crop&w=600&q=80', 5, 5)
-ON CONFLICT DO NOTHING;
-

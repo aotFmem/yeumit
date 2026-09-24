@@ -82,66 +82,6 @@ const IMAGE_PRESETS = [
   },
 ];
 
-// รายการอุปกรณ์เริ่มต้นกรณีจำลอง
-const INITIAL_FALLBACK_EQUIPMENTS: Equipment[] = [
-  {
-    id: "e1000000-0000-0000-0000-000000000001",
-    name: 'MacBook Pro 14" M3 (Space Gray)',
-    image_url:
-      "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=600&q=80",
-    total_stock: 5,
-    available_stock: 3,
-  },
-  {
-    id: "e2000000-0000-0000-0000-000000000002",
-    name: "Dell XPS 15 (Core i7, 32GB RAM)",
-    image_url:
-      "https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?auto=format&fit=crop&w=600&q=80",
-    total_stock: 4,
-    available_stock: 2,
-  },
-  {
-    id: "e3000000-0000-0000-0000-000000000003",
-    name: 'Dell UltraSharp 27" 4K Monitor',
-    image_url:
-      "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=600&q=80",
-    total_stock: 6,
-    available_stock: 4,
-  },
-  {
-    id: "e4000000-0000-0000-0000-000000000004",
-    name: 'iPad Air 11" M2 + Apple Pencil',
-    image_url:
-      "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=600&q=80",
-    total_stock: 3,
-    available_stock: 1,
-  },
-  {
-    id: "e5000000-0000-0000-0000-000000000005",
-    name: "Logitech MX Master 3S Wireless Mouse",
-    image_url:
-      "https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?auto=format&fit=crop&w=600&q=80",
-    total_stock: 10,
-    available_stock: 8,
-  },
-  {
-    id: "e6000000-0000-0000-0000-000000000006",
-    name: "Epson Full HD Mobile Projector",
-    image_url:
-      "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=600&q=80",
-    total_stock: 2,
-    available_stock: 0,
-  },
-  {
-    id: "e7000000-0000-0000-0000-000000000007",
-    name: "Anker 12-in-1 USB-C Docking Station",
-    image_url:
-      "https://images.unsplash.com/photo-1622445262464-84b14e4b7501?auto=format&fit=crop&w=600&q=80",
-    total_stock: 5,
-    available_stock: 5,
-  },
-];
-
 export default function AdminDashboardPage() {
   // --- สถานะการตรวจสอบสิทธิ์ Admin ---
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -289,16 +229,12 @@ export default function AdminDashboardPage() {
         headers: { "x-admin-token": adminToken || "" },
       });
       const eqResult = await eqRes.json();
-      if (eqRes.ok && eqResult.equipments && eqResult.equipments.length > 0) {
+      if (eqRes.ok && Array.isArray(eqResult.equipments)) {
         setEquipments(eqResult.equipments);
       } else {
         // ดึงจาก Supabase client
         const { data: eqData } = await supabase.from("equipments").select("*");
-        if (eqData && eqData.length > 0) {
-          setEquipments(eqData);
-        } else {
-          setEquipments(INITIAL_FALLBACK_EQUIPMENTS);
-        }
+        setEquipments(eqData || []);
       }
 
       // 2. ดึงรายการที่กำลังถูกยืมอยู่ทั้งหมด
@@ -315,6 +251,7 @@ export default function AdminDashboardPage() {
       }
     } catch {
       setActiveLoans([]);
+      setEquipments([]);
     } finally {
       setLoading(false);
     }
@@ -842,7 +779,11 @@ export default function AdminDashboardPage() {
             ) : filteredEquipments.length === 0 ? (
               <div className="py-10 text-center text-slate-400 text-xs bg-white rounded-2xl border border-dashed border-slate-200 p-6">
                 <Package className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                <p>ไม่พบรายการอุปกรณ์</p>
+                <p>
+                  {equipments.length === 0
+                    ? "ยังไม่มีอุปกรณ์ในคลัง"
+                    : "ไม่พบรายการอุปกรณ์ที่ค้นหา"}
+                </p>
                 <button
                   type="button"
                   onClick={handleOpenAddModal}
