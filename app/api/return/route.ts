@@ -145,12 +145,24 @@ export async function POST(request: Request) {
       }
     }
 
+    // 8.1 คืนสถานะเครื่องย่อย (equipment_items) ให้กลับมาเป็น 'available'
+    if (transaction.item_id) {
+      await supabaseAdmin
+        .from("equipment_items")
+        .update({ status: "available" })
+        .eq("id", transaction.item_id);
+    }
+
     // 9. ส่งการแจ้งเตือนเข้า LINE (Messaging API / Notify)
     const messagingToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
     const targetUserId = process.env.LINE_ADMIN_TARGET_ID || transaction.line_user_id;
     const notifyToken = process.env.LINE_NOTIFY_TOKEN;
 
-    const formattedMessage = `✅ แจ้งเตือนคืนอุปกรณ์ IT สำเร็จ!\nผู้คืน: ${transaction.display_name}\nแผนก: ${transaction.department}\nรายการ: ${equipmentName}\nวันที่คืน: ${todayStr}`;
+    const itemReturnText = transaction.serial_number || transaction.asset_number
+      ? `\nเครื่องที่คืน: ${transaction.serial_number ? `S/N: ${transaction.serial_number}` : ""} ${transaction.asset_number ? `(พัสดุ: ${transaction.asset_number})` : ""}`
+      : "";
+
+    const formattedMessage = `✅ แจ้งเตือนคืนอุปกรณ์ IT สำเร็จ!\nผู้คืน: ${transaction.display_name}\nแผนก: ${transaction.department}\nรายการ: ${equipmentName}${itemReturnText}\nวันที่คืน: ${todayStr}`;
 
     if (messagingToken && messagingToken !== "your-channel-access-token-here") {
       try {

@@ -28,11 +28,13 @@ import {
   ShieldCheck,
   Users,
   QrCode,
+  Tag,
+  Hash,
 } from "lucide-react";
 import liff from "@line/liff";
 import { initializeLiff, closeLiff } from "@/lib/liff";
 import { supabase } from "@/lib/supabaseClient";
-import { Equipment, UserProfile, Transaction } from "@/lib/types";
+import { Equipment, EquipmentItem, UserProfile, Transaction } from "@/lib/types";
 import QrScannerModal from "@/components/QrScannerModal";
 
 const HOSPITAL_DEPARTMENTS = [
@@ -51,6 +53,16 @@ const HOSPITAL_DEPARTMENTS = [
   "อื่นๆ / บุคลากรภายนอก",
 ];
 
+const CATEGORY_TABS = [
+  { id: "all", label: "ทั้งหมด" },
+  { id: "โน้ตบุ๊ก", label: "💻 โน้ตบุ๊ก" },
+  { id: "แท็บเล็ต", label: "📱 แท็บเล็ต" },
+  { id: "โปรเจคเตอร์", label: "📽️ โปรเจคเตอร์" },
+  { id: "จอมอนิเตอร์", label: "🖥️ จอภาพ" },
+  { id: "อุปกรณ์เสริม", label: "🔌 อุปกรณ์เสริม" },
+  { id: "อื่นๆ", label: "📦 อื่นๆ" },
+];
+
 export default function BorrowPage() {
   // สลับแท็บ "ยืมอุปกรณ์" หรือ "คืนอุปกรณ์" (สำหรับผู้ใช้ทั่วไป)
   const [activeTab, setActiveTab] = useState<"borrow" | "return">("borrow");
@@ -63,6 +75,8 @@ export default function BorrowPage() {
   const [equipments, setEquipments] = useState<Equipment[]>([]);
   const [isEquipmentsLoading, setIsEquipmentsLoading] = useState(true);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState("");
+  const [selectedItemId, setSelectedItemId] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [department, setDepartment] = useState("");
   const [borrowDate, setBorrowDate] = useState(() => {
@@ -78,6 +92,9 @@ export default function BorrowPage() {
     equipmentName: string;
     borrowDate: string;
     timeSlot?: string;
+    itemCode?: string;
+    serialNumber?: string;
+    assetNumber?: string;
   } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -216,7 +233,7 @@ export default function BorrowPage() {
     setupLiff();
   }, []);
 
-  // 2. ดึงรายการอุปกรณ์ทั้งหมด
+  // 2. ดึงรายการอุปกรณ์ทั้งหมด (พร้อมรายการเครื่องย่อย equipment_items)
   const fetchEquipments = async () => {
     setIsEquipmentsLoading(true);
     try {
@@ -228,7 +245,26 @@ export default function BorrowPage() {
       if (error || !data) {
         setEquipments([]);
       } else {
-        setEquipments(data);
+        // ดึงรายการ equipment_items เข้ามาประกบด้วย (ถ้ามี)
+        try {
+          const { data: itemsData } = await supabase
+            .from("equipment_items")
+            .select("*")
+            .order("item_code", { ascending: true });
+
+          if (itemsData && itemsData.length > 0) {
+            setEquipments(
+              data.map((eq: any) => ({
+                ...eq,
+                items: itemsData.filter((i: any) => i.equipment_id === eq.id),
+              }))
+            );
+          } else {
+            setEquipments(data);
+          }
+        } catch {
+          setEquipments(data);
+        }
       }
     } catch {
       setEquipments([]);
@@ -240,6 +276,25 @@ export default function BorrowPage() {
   useEffect(() => {
     fetchEquipments();
   }, []);
+
+  // เมื่อเปลี่ยนอุปกรณ์ที่เลือก ให้รีเซ็ตหรือเลือกเครื่องย่อยตัวแรกที่ว่างอัตโนมัติ
+  useEffect(() => {
+    if (!selectedEquipmentId) {
+      setSelectedItemId("");
+      return;
+    }
+    const currentEq = equipments.find((e) => e.id === selectedEquipmentId);
+    if (currentEq && currentEq.items && currentEq.items.length > 0) {
+      const availableItems = currentEq.items.filter((i) => i.status === "available");
+      if (availableItems.length > 0) {
+        setSelectedItemId(availableItems[0].id);
+      } else {
+        setSelectedItemId("");
+      }
+    } else {
+      setSelectedItemId("");
+    }
+  }, [selectedEquipmentId, equipments]);
 
   // 3. ดึงรายการที่ผู้ใช้คนนี้ยืมอยู่
   const fetchUserBorrowedItems = async (userId: string) => {
@@ -288,11 +343,16 @@ export default function BorrowPage() {
   const selectedEquipment = equipments.find((item) => item.id === selectedEquipmentId);
   const isOutOfStock = selectedEquipment ? selectedEquipment.available_stock <= 0 : false;
 
-  // กรองรายการอุปกรณ์: ซ่อนอุปกรณ์ที่ปลดระวาง/สต็อกรวมเป็น 0 ชิ้น และค้นหาตามชื่อ
+  // กรองรายการอุปกรณ์: ซ่อนอุปกรณ์ที่ปลดระวาง/สต็อกรวมเป็น 0 ชิ้น และค้นหาตามชื่อ + หมวดหมู่
   const activeEquipments = equipments.filter((item) => item.total_stock > 0);
-  const filteredEquipments = activeEquipments.filter((item) =>
-    item.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredEquipments = activeEquipments.filter((item) => {
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory =
+      selectedCategory === "all" ||
+      (item.category && item.category.trim() === selectedCategory) ||
+      (!item.category && selectedCategory === "โน้ตบุ๊ก" && item.name.toLowerCase().includes("โน้ตบุ๊ก"));
+    return matchesSearch && matchesCategory;
+  });
 
   // ส่งคำขอยืมอุปกรณ์
   const handleBorrowSubmit = async (e: React.FormEvent) => {
@@ -319,9 +379,20 @@ export default function BorrowPage() {
       return;
     }
 
+    // หากอุปกรณ์มีเครื่องย่อย ต้องเลือกเครื่องที่ต้องการยืม
+    if (selectedEquipment?.items && selectedEquipment.items.length > 0) {
+      const hasAvailable = selectedEquipment.items.some((i) => i.status === "available");
+      if (hasAvailable && !selectedItemId) {
+        setErrorMessage("กรุณาเลือกเครื่องย่อย / S/N ที่ต้องการยืม");
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     try {
+      const chosenItem = selectedEquipment?.items?.find((i) => i.id === selectedItemId);
+
       const response = await fetch("/api/borrow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -330,6 +401,7 @@ export default function BorrowPage() {
           display_name: profile.displayName,
           department: department,
           equipment_id: selectedEquipmentId,
+          item_id: selectedItemId || undefined,
           borrow_date: borrowDate,
           time_slot: timeSlot,
           purpose: purpose.trim() || "ใช้งานทั่วไปในโรงพยาบาล",
@@ -348,6 +420,9 @@ export default function BorrowPage() {
         equipmentName: result.transaction?.equipment_name || selectedEquipment?.name || "อุปกรณ์ IT",
         borrowDate: borrowDate,
         timeSlot: timeSlot,
+        itemCode: chosenItem?.item_code,
+        serialNumber: chosenItem?.serial_number || undefined,
+        assetNumber: chosenItem?.asset_number || undefined,
       });
 
       // รีเฟรชข้อมูล
@@ -532,6 +607,16 @@ export default function BorrowPage() {
                       {successData.equipmentName}
                     </span>
                   </div>
+                  {successData.itemCode && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">เครื่องที่เลือก:</span>
+                      <span className="font-semibold text-emerald-700 text-right">
+                        {successData.itemCode}
+                        {successData.serialNumber && ` (S/N: ${successData.serialNumber})`}
+                        {successData.assetNumber && ` [พัสดุ: ${successData.assetNumber}]`}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500">วันที่ยืม:</span>
                     <span className="font-semibold text-slate-800">{successData.borrowDate}</span>
@@ -620,6 +705,24 @@ export default function BorrowPage() {
                         แตะที่รูปเพื่อเลือก
                       </span>
                     )}
+                  </div>
+
+                  {/* แถบหมวดหมู่อุปกรณ์ (Category Filter Chips) */}
+                  <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 mb-2.5 select-none no-scrollbar">
+                    {CATEGORY_TABS.map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setSelectedCategory(tab.id)}
+                        className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-all ${
+                          selectedCategory === tab.id
+                            ? "bg-slate-900 text-white shadow-xs"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
                   </div>
 
                   {/* ช่องค้นหาอุปกรณ์ */}
@@ -728,6 +831,92 @@ export default function BorrowPage() {
                       })
                     )}
                   </div>
+
+                  {/* กล่องเลือกเครื่องย่อย / S/N / เลขพัสดุ */}
+                  {selectedEquipment && selectedEquipment.items && selectedEquipment.items.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-slate-100 animate-in fade-in">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                          <Tag className="w-3.5 h-3.5 text-[#06C755]" />
+                          <span>เลือกเครื่อง / S/N ที่ต้องการยืม</span>
+                          <span className="text-red-500">*</span>
+                        </label>
+                        <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">
+                          พร้อมให้ยืม {selectedEquipment.items.filter((i) => i.status === "available").length} เครื่อง
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {selectedEquipment.items
+                          .filter((i) => i.status !== "retired")
+                          .map((unit) => {
+                            const isAvailable = unit.status === "available";
+                            const isSelected = selectedItemId === unit.id;
+
+                            return (
+                              <div
+                                key={unit.id}
+                                onClick={() => {
+                                  if (isAvailable && !submitting) {
+                                    setSelectedItemId(unit.id);
+                                  }
+                                }}
+                                className={`p-2.5 rounded-xl border text-xs transition flex items-center justify-between select-none ${
+                                  !isAvailable
+                                    ? "bg-slate-50 border-slate-200 text-slate-400 opacity-60 cursor-not-allowed"
+                                    : isSelected
+                                    ? "bg-emerald-50/70 border-[#06C755] ring-2 ring-[#06C755]/20 shadow-xs cursor-pointer"
+                                    : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50 cursor-pointer"
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-bold text-slate-900">{unit.item_code}</span>
+                                    {!isAvailable && (
+                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-medium">
+                                        {unit.status === "borrowed" ? "ถูกยืมอยู่" : "ส่งซ่อม"}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[11px] text-slate-600">
+                                    {unit.serial_number && (
+                                      <span className="font-mono text-slate-700">
+                                        S/N: <b>{unit.serial_number}</b>
+                                      </span>
+                                    )}
+                                    {unit.asset_number && (
+                                      <span className="text-slate-700">
+                                        เลขพัสดุ: <b>{unit.asset_number}</b>
+                                      </span>
+                                    )}
+                                    {unit.note && (
+                                      <span className="text-slate-500 italic">
+                                        ({unit.note})
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="shrink-0 pl-2">
+                                  {isSelected ? (
+                                    <div className="w-5 h-5 rounded-full bg-[#06C755] text-white flex items-center justify-center shadow-xs">
+                                      <Check className="w-3 h-3 stroke-[3]" />
+                                    </div>
+                                  ) : (
+                                    <div
+                                      className={`w-5 h-5 rounded-full border-2 ${
+                                        isAvailable ? "border-slate-300" : "border-slate-200 bg-slate-100"
+                                      }`}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 3. วันที่และช่วงเวลาที่ต้องการยืม */}
@@ -970,6 +1159,20 @@ export default function BorrowPage() {
                             <h3 className="text-xs font-bold text-slate-800 truncate">
                               {equip?.name || "อุปกรณ์ IT"}
                             </h3>
+                            {(tx.serial_number || tx.asset_number) && (
+                              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                {tx.serial_number && (
+                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 font-mono text-[10px] font-semibold border border-blue-200">
+                                    S/N: {tx.serial_number}
+                                  </span>
+                                )}
+                                {tx.asset_number && (
+                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 text-[10px] font-semibold border border-purple-200">
+                                    พัสดุ: {tx.asset_number}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             <p className="text-[11px] text-slate-500 truncate mt-0.5">
                               {tx.department}
                             </p>

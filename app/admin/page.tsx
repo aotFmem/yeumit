@@ -28,12 +28,16 @@ import {
   Copy,
   Download,
   Printer,
+  Tag,
+  Hash,
+  Wrench,
+  ShieldAlert,
 } from "lucide-react";
 import liff from "@line/liff";
 import QRCode from "qrcode";
 import { initializeLiff } from "@/lib/liff";
 import { supabase } from "@/lib/supabaseClient";
-import { Equipment, Transaction, UserProfile } from "@/lib/types";
+import { Equipment, EquipmentItem, ItemStatus, Transaction, UserProfile } from "@/lib/types";
 
 const OFFICIAL_IT_QR_CODE = "IT-RETURN-2026";
 const ADMIN_STORAGE_KEY = "yeum_it_admin_auth";
@@ -170,10 +174,29 @@ export default function AdminDashboardPage() {
   const [formMode, setFormMode] = useState<"add" | "edit">("add");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState<string>("");
+  const [formCategory, setFormCategory] = useState<string>("โน้ตบุ๊ก");
   const [formStock, setFormStock] = useState<number>(1);
   const [formImageUrl, setFormImageUrl] = useState<string>("");
   const [formSubmitting, setFormSubmitting] = useState<boolean>(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // --- โมดอลจัดการเครื่องย่อย / S/N (Serialized Equipment Items) ---
+  const [showItemsModal, setShowItemsModal] = useState<boolean>(false);
+  const [activeEquipmentForItems, setActiveEquipmentForItems] = useState<Equipment | null>(null);
+  const [itemsList, setItemsList] = useState<EquipmentItem[]>([]);
+  const [loadingItems, setLoadingItems] = useState<boolean>(false);
+
+  // ฟอร์ม เพิ่ม/แก้ไข เครื่องย่อย
+  const [showItemForm, setShowItemForm] = useState<boolean>(false);
+  const [itemFormMode, setItemFormMode] = useState<"add" | "edit">("add");
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [itemCodeInput, setItemCodeInput] = useState<string>("");
+  const [serialNumberInput, setSerialNumberInput] = useState<string>("");
+  const [assetNumberInput, setAssetNumberInput] = useState<string>("");
+  const [itemStatusInput, setItemStatusInput] = useState<ItemStatus>("available");
+  const [itemNoteInput, setItemNoteInput] = useState<string>("");
+  const [itemSubmitting, setItemSubmitting] = useState<boolean>(false);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
 
   // ตรวจสอบสถานะการเข้าสู่ระบบเริ่มต้น
   useEffect(() => {
@@ -317,6 +340,7 @@ export default function AdminDashboardPage() {
     setFormMode("add");
     setEditingId(null);
     setFormName("");
+    setFormCategory("โน้ตบุ๊ก");
     setFormStock(1);
     setFormImageUrl(IMAGE_PRESETS[0].url);
     setShowFormModal(true);
@@ -327,6 +351,7 @@ export default function AdminDashboardPage() {
     setFormMode("edit");
     setEditingId(eq.id);
     setFormName(eq.name);
+    setFormCategory(eq.category || "โน้ตบุ๊ก");
     setFormStock(eq.total_stock);
     setFormImageUrl(eq.image_url || "");
     setShowFormModal(true);
@@ -352,6 +377,7 @@ export default function AdminDashboardPage() {
       const body = {
         id: editingId,
         name: formName.trim(),
+        category: formCategory,
         total_stock: formStock,
         image_url: formImageUrl.trim() || null,
       };
@@ -377,6 +403,138 @@ export default function AdminDashboardPage() {
       alert(err?.message || "เกิดข้อผิดพลาดในการบันทึก");
     } finally {
       setFormSubmitting(false);
+    }
+  };
+
+  // --- ฟังก์ชันจัดการเครื่องย่อย (Equipment Items) ---
+  const fetchEquipmentItems = async (eqId: string) => {
+    setLoadingItems(true);
+    try {
+      const res = await fetch(`/api/admin/equipment-items?equipment_id=${encodeURIComponent(eqId)}`, {
+        headers: { "x-admin-token": adminToken || "" },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setItemsList(data.items || []);
+      } else {
+        setItemsList([]);
+      }
+    } catch {
+      setItemsList([]);
+    } finally {
+      setLoadingItems(false);
+    }
+  };
+
+  const handleOpenItemsModal = (eq: Equipment) => {
+    setActiveEquipmentForItems(eq);
+    setShowItemsModal(true);
+    setShowItemForm(false);
+    fetchEquipmentItems(eq.id);
+  };
+
+  const handleOpenAddItemForm = () => {
+    const nextIndex = (itemsList.length || 0) + 1;
+    setItemFormMode("add");
+    setEditingItemId(null);
+    setItemCodeInput(`เครื่องที่ ${nextIndex}`);
+    setSerialNumberInput("");
+    setAssetNumberInput("");
+    setItemStatusInput("available");
+    setItemNoteInput("");
+    setShowItemForm(true);
+  };
+
+  const handleOpenEditItemForm = (item: EquipmentItem) => {
+    setItemFormMode("edit");
+    setEditingItemId(item.id);
+    setItemCodeInput(item.item_code);
+    setSerialNumberInput(item.serial_number || "");
+    setAssetNumberInput(item.asset_number || "");
+    setItemStatusInput(item.status);
+    setItemNoteInput(item.note || "");
+    setShowItemForm(true);
+  };
+
+  const handleSaveItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeEquipmentForItems) return;
+
+    if (!itemCodeInput.trim()) {
+      alert("กรุณาระบุชื่อเรียกเครื่องหรือเบอร์เครื่อง (เช่น เครื่องที่ 1 หรือ NB-01)");
+      return;
+    }
+
+    setItemSubmitting(true);
+    try {
+      const isEdit = itemFormMode === "edit";
+      const payload: any = {
+        equipment_id: activeEquipmentForItems.id,
+        item_code: itemCodeInput.trim(),
+        serial_number: serialNumberInput.trim() || null,
+        asset_number: assetNumberInput.trim() || null,
+        status: itemStatusInput,
+        note: itemNoteInput.trim() || null,
+      };
+
+      if (isEdit && editingItemId) {
+        payload.id = editingItemId;
+      }
+
+      const res = await fetch("/api/admin/equipment-items", {
+        method: isEdit ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-token": adminToken || "",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const resData = await res.json();
+      if (!res.ok || !resData.success) {
+        throw new Error(resData.error || "เกิดข้อผิดพลาดในการบันทึกข้อมูลเครื่องย่อย");
+      }
+
+      setShowItemForm(false);
+      await fetchEquipmentItems(activeEquipmentForItems.id);
+      await loadData();
+    } catch (err: any) {
+      alert(err?.message || "เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+    } finally {
+      setItemSubmitting(false);
+    }
+  };
+
+  const handleDeleteItem = async (item: EquipmentItem) => {
+    if (item.status === "borrowed") {
+      alert(`⚠️ ไม่สามารถลบ '${item.item_code}' ได้ เนื่องจากกำลังถูกยืมอยู่ กรุณารับคืนก่อนลบครับ`);
+      return;
+    }
+
+    if (!confirm(`ยืนยันการลบเครื่อง '${item.item_code}' ออกจากระบบ?`)) {
+      return;
+    }
+
+    setDeletingItemId(item.id);
+    try {
+      const res = await fetch(`/api/admin/equipment-items?id=${encodeURIComponent(item.id)}`, {
+        method: "DELETE",
+        headers: { "x-admin-token": adminToken || "" },
+      });
+
+      const resData = await res.json();
+      if (!res.ok || !resData.success) {
+        throw new Error(resData.error || "เกิดข้อผิดพลาดในการลบ");
+      }
+
+      if (activeEquipmentForItems) {
+        await fetchEquipmentItems(activeEquipmentForItems.id);
+      }
+      await loadData();
+    } catch (err: any) {
+      alert(err?.message || "เกิดข้อผิดพลาดในการลบเครื่องย่อย");
+    } finally {
+      setDeletingItemId(null);
     }
   };
 
@@ -816,9 +974,16 @@ export default function AdminDashboardPage() {
 
                         {/* รายละเอียด */}
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-xs font-bold text-slate-900 leading-snug">
-                            {eq.name}
-                          </h3>
+                          <div className="flex items-center space-x-1.5 flex-wrap">
+                            <h3 className="text-xs font-bold text-slate-900 leading-snug">
+                              {eq.name}
+                            </h3>
+                            {eq.category && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-medium">
+                                {eq.category}
+                              </span>
+                            )}
+                          </div>
 
                           {/* สถิติสต็อก */}
                           <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px]">
@@ -853,30 +1018,41 @@ export default function AdminDashboardPage() {
                         </div>
                       </div>
 
-                      {/* ปุ่มแก้ไข / ลบ */}
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-end space-x-2">
+                      {/* ปุ่มจัดการเครื่องย่อย / แก้ไข / ลบ */}
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                         <button
                           type="button"
-                          onClick={() => handleOpenEditModal(eq)}
-                          className="px-2.5 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 font-medium text-[11px] rounded-lg border border-slate-200 hover:border-blue-200 flex items-center space-x-1 transition"
+                          onClick={() => handleOpenItemsModal(eq)}
+                          className="px-2.5 py-1 text-blue-700 bg-blue-50 hover:bg-blue-100 font-semibold text-[11px] rounded-lg border border-blue-200 flex items-center space-x-1 transition"
                         >
-                          <Pencil className="w-3 h-3" />
-                          <span>แก้ไข</span>
+                          <Tag className="w-3 h-3 text-blue-600" />
+                          <span>จัดการเครื่องย่อย / S/N ({eq.items?.length || 0})</span>
                         </button>
 
-                        <button
-                          type="button"
-                          disabled={isDeleting}
-                          onClick={() => handleDeleteEquipment(eq)}
-                          className="px-2.5 py-1 text-slate-600 hover:text-red-600 hover:bg-red-50 font-medium text-[11px] rounded-lg border border-slate-200 hover:border-red-200 flex items-center space-x-1 transition disabled:opacity-50"
-                        >
-                          {isDeleting ? (
-                            <Loader2 className="w-3 h-3 animate-spin text-red-500" />
-                          ) : (
-                            <Trash2 className="w-3 h-3" />
-                          )}
-                          <span>{isDeleting ? "กำลังลบ..." : "ลบ"}</span>
-                        </button>
+                        <div className="flex items-center space-x-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(eq)}
+                            className="px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 font-medium text-[11px] rounded-lg border border-slate-200 hover:border-blue-200 flex items-center space-x-1 transition"
+                          >
+                            <Pencil className="w-3 h-3" />
+                            <span>แก้ไข</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isDeleting}
+                            onClick={() => handleDeleteEquipment(eq)}
+                            className="px-2 py-1 text-slate-600 hover:text-red-600 hover:bg-red-50 font-medium text-[11px] rounded-lg border border-slate-200 hover:border-red-200 flex items-center space-x-1 transition disabled:opacity-50"
+                          >
+                            {isDeleting ? (
+                              <Loader2 className="w-3 h-3 animate-spin text-red-500" />
+                            ) : (
+                              <Trash2 className="w-3 h-3" />
+                            )}
+                            <span>{isDeleting ? "..." : "ลบ"}</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -951,6 +1127,20 @@ export default function AdminDashboardPage() {
                             <h3 className="text-xs font-bold text-slate-900 truncate">
                               {equip?.name || "อุปกรณ์ IT"}
                             </h3>
+                            {(loan.serial_number || loan.asset_number) && (
+                              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                {loan.serial_number && (
+                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 font-mono text-[10px] font-semibold border border-blue-200">
+                                    S/N: {loan.serial_number}
+                                  </span>
+                                )}
+                                {loan.asset_number && (
+                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 text-[10px] font-semibold border border-purple-200">
+                                    พัสดุ: {loan.asset_number}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             <p className="text-[11px] font-semibold text-blue-700 truncate mt-0.5">
                               👤 {loan.display_name}
                               {loan.internal_phone && (
@@ -1046,6 +1236,30 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
+              {/* หมวดหมู่อุปกรณ์ */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  หมวดหมู่อุปกรณ์
+                </label>
+                <div className="relative">
+                  <select
+                    value={formCategory}
+                    onChange={(e) => setFormCategory(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 outline-none transition appearance-none cursor-pointer"
+                  >
+                    <option value="โน้ตบุ๊ก">💻 โน้ตบุ๊ก (Notebook)</option>
+                    <option value="แท็บเล็ต">📱 แท็บเล็ต (iPad/Tablet)</option>
+                    <option value="โปรเจคเตอร์">📽️ โปรเจคเตอร์ (Projector)</option>
+                    <option value="จอมอนิเตอร์">🖥️ จอภาพ (Monitor)</option>
+                    <option value="อุปกรณ์เสริม">🔌 อุปกรณ์เสริม (Accessories)</option>
+                    <option value="อื่นๆ">📦 อื่นๆ (Other)</option>
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs">
+                    ▼
+                  </div>
+                </div>
+              </div>
+
               {/* จำนวนสต็อกทั้งหมด */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -1061,7 +1275,7 @@ export default function AdminDashboardPage() {
                   required
                 />
                 <span className="text-[10px] text-slate-400 mt-0.5 block">
-                  ระบุจำนวนเครื่อง/ชิ้นทั้งหมดที่มีในโรงพยาบาล (หากเลิกใช้งานแล้ว ให้ระบุเป็น 0 ชิ้น)
+                  ระบุจำนวนทั้งหมดที่มีในโรงพยาบาล (หากมีเครื่องย่อย ระบบจะคำนวณให้อัตโนมัติ)
                 </span>
               </div>
 
@@ -1225,6 +1439,314 @@ export default function AdminDashboardPage() {
             >
               ปิดหน้าต่าง
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL: จัดการเครื่องย่อย / S/N / เลขพัสดุ (Equipment Items) */}
+      {/* ========================================================= */}
+      {showItemsModal && activeEquipmentForItems && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-5 shadow-2xl relative max-h-[92vh] flex flex-col">
+            {/* ปุ่มปิด Modal */}
+            <button
+              type="button"
+              onClick={() => setShowItemsModal(false)}
+              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Header */}
+            <div className="flex items-center space-x-2.5 mb-3 pr-8">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                <Tag className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 truncate">
+                  จัดการเครื่องย่อย: {activeEquipmentForItems.name}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  กำหนด Serial Number (S/N), เลขครุภัณฑ์/พัสดุ และสถานะรายเครื่อง
+                </p>
+              </div>
+            </div>
+
+            {/* แถบสรุปสถิติเครื่อง */}
+            <div className="flex items-center gap-1.5 flex-wrap text-[11px] mb-3 p-2 bg-slate-50 rounded-xl border border-slate-200">
+              <span className="font-semibold text-slate-700">
+                เครื่องทั้งหมด: <b>{itemsList.length}</b>
+              </span>
+              <span className="text-slate-300">•</span>
+              <span className="text-emerald-700 font-medium">
+                ว่าง <b>{itemsList.filter((i) => i.status === "available").length}</b>
+              </span>
+              <span className="text-slate-300">•</span>
+              <span className="text-amber-700 font-medium">
+                ยืมอยู่ <b>{itemsList.filter((i) => i.status === "borrowed").length}</b>
+              </span>
+              <span className="text-slate-300">•</span>
+              <span className="text-slate-500 font-medium">
+                ซ่อม/ปลด <b>{itemsList.filter((i) => i.status === "maintenance" || i.status === "retired").length}</b>
+              </span>
+            </div>
+
+            {/* ปุ่มเพิ่มเครื่องย่อยใหม่ (เมื่อไม่ได้เปิดฟอร์ม) */}
+            {!showItemForm && (
+              <div className="mb-3">
+                <button
+                  type="button"
+                  onClick={handleOpenAddItemForm}
+                  className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-1.5 shadow-xs"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ เพิ่มเครื่องใหม่ (S/N / เลขพัสดุ)</span>
+                </button>
+              </div>
+            )}
+
+            {/* ฟอร์ม เพิ่ม / แก้ไข เครื่องย่อย (Inline Form) */}
+            {showItemForm && (
+              <form
+                onSubmit={handleSaveItem}
+                className="mb-3.5 p-3.5 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-2.5 animate-in fade-in"
+              >
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-blue-900 flex items-center space-x-1">
+                    <span>{itemFormMode === "add" ? "➕ เพิ่มเครื่องใหม่" : "✏️ แก้ไขข้อมูลเครื่อง"}</span>
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setShowItemForm(false)}
+                    className="text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* ชื่อเรียกเครื่อง / เบอร์เครื่อง */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                      ชื่อเรียก / ลำดับเครื่อง <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น เครื่องที่ 1, NB-01"
+                      value={itemCodeInput}
+                      onChange={(e) => setItemCodeInput(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
+                      required
+                    />
+                  </div>
+
+                  {/* Serial Number (S/N) */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                      Serial Number (S/N)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น 8J92KL, NX12345"
+                      value={serialNumberInput}
+                      onChange={(e) => setSerialNumberInput(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:border-blue-500 outline-none font-mono"
+                    />
+                  </div>
+
+                  {/* หมายเลขครุภัณฑ์ / พัสดุ */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                      หมายเลขครุภัณฑ์ / พัสดุ
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น รพ-67-001 (เว้นว่างได้)"
+                      value={assetNumberInput}
+                      onChange={(e) => setAssetNumberInput(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
+                    />
+                  </div>
+
+                  {/* สถานะเครื่อง */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                      สถานะเครื่อง
+                    </label>
+                    <select
+                      value={itemStatusInput}
+                      onChange={(e) => setItemStatusInput(e.target.value as ItemStatus)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
+                    >
+                      <option value="available">🟢 ว่าง (พร้อมยืม)</option>
+                      <option value="borrowed">🟡 ถูกยืมอยู่</option>
+                      <option value="maintenance">🔴 ส่งซ่อม (Maintenance)</option>
+                      <option value="retired">⚪ ปลดระวาง (Retired)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* หมายเหตุ */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                    หมายเหตุ / สเปคเครื่อง
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="เช่น RAM 16GB, เมาส์บลูทูธในกระเป๋า"
+                    value={itemNoteInput}
+                    onChange={(e) => setItemNoteInput(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
+                  />
+                </div>
+
+                {/* ปุ่มกดยืนยันในฟอร์ม */}
+                <div className="flex items-center justify-end space-x-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowItemForm(false)}
+                    className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={itemSubmitting}
+                    className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition flex items-center space-x-1.5 disabled:opacity-50"
+                  >
+                    {itemSubmitting ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>กำลังบันทึก...</span>
+                      </>
+                    ) : (
+                      <span>บันทึกเครื่องย่อย</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* รายการเครื่องย่อยทั้งหมด (Scrollable Item List) */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[160px] max-h-[360px]">
+              {loadingItems ? (
+                <div className="py-8 text-center text-slate-400 text-xs flex flex-col items-center">
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-600 mb-2" />
+                  กำลังโหลดข้อมูลเครื่องย่อย...
+                </div>
+              ) : itemsList.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-xs bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-4">
+                  <Tag className="w-7 h-7 text-slate-300 mx-auto mb-1.5" />
+                  <p className="font-semibold text-slate-700">ยังไม่มีรายการเครื่องย่อย</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    คุณสามารถกดปุ่มด้านบนเพื่อเพิ่ม S/N หรือหมายเลขครุภัณฑ์รายเครื่องได้เลย
+                  </p>
+                </div>
+              ) : (
+                itemsList.map((item) => {
+                  const isBorrowed = item.status === "borrowed";
+                  const isDeleting = deletingItemId === item.id;
+
+                  let statusBadge = (
+                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-semibold rounded-md">
+                      ว่าง (พร้อมยืม)
+                    </span>
+                  );
+                  if (item.status === "borrowed") {
+                    statusBadge = (
+                      <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-semibold rounded-md">
+                        ถูกยืมอยู่
+                      </span>
+                    );
+                  } else if (item.status === "maintenance") {
+                    statusBadge = (
+                      <span className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-semibold rounded-md">
+                        ส่งซ่อม
+                      </span>
+                    );
+                  } else if (item.status === "retired") {
+                    statusBadge = (
+                      <span className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-semibold rounded-md">
+                        ปลดระวาง
+                      </span>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-2.5 bg-white rounded-xl border border-slate-200 hover:border-slate-300 transition flex items-center justify-between gap-2 shadow-2xs"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-xs text-slate-900">{item.item_code}</span>
+                          {statusBadge}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[11px] text-slate-600">
+                          {item.serial_number && (
+                            <span className="font-mono text-slate-700">
+                              S/N: <b>{item.serial_number}</b>
+                            </span>
+                          )}
+                          {item.asset_number && (
+                            <span className="text-slate-700">
+                              พัสดุ: <b>{item.asset_number}</b>
+                            </span>
+                          )}
+                          {item.note && (
+                            <span className="text-slate-400 italic">
+                              ({item.note})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* ปุ่มแก้ไข / ลบ รายเครื่อง */}
+                      <div className="flex items-center space-x-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditItemForm(item)}
+                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                          title="แก้ไขข้อมูลเครื่อง"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isBorrowed || isDeleting}
+                          onClick={() => handleDeleteItem(item)}
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                          title={isBorrowed ? "ไม่สามารถลบได้เนื่องจากถูกยืมอยู่" : "ลบเครื่องนี้"}
+                        >
+                          {isDeleting ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer คำแนะนำและปุ่มปิด */}
+            <div className="pt-3 mt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+              <span className="truncate pr-2">
+                💡 สต็อกรวมของอุปกรณ์จะซิงค์ตามเครื่องย่อยนี้อัตโนมัติ
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowItemsModal(false)}
+                className="py-1.5 px-4 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-xl transition shrink-0"
+              >
+                เสร็จสิ้น
+              </button>
+            </div>
           </div>
         </div>
       )}

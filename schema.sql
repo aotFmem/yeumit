@@ -17,9 +17,24 @@ END$$;
 CREATE TABLE IF NOT EXISTS equipments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
+    category TEXT DEFAULT 'โน้ตบุ๊ก',
     image_url TEXT,
     total_stock INTEGER NOT NULL DEFAULT 0 CHECK (total_stock >= 0),
     available_stock INTEGER NOT NULL DEFAULT 0 CHECK (available_stock >= 0 AND available_stock <= total_stock),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE equipments ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'โน้ตบุ๊ก';
+
+-- 3.1 Create Equipment Items Table (เครื่องย่อยรายตัว / S/N / เลขพัสดุ)
+CREATE TABLE IF NOT EXISTS equipment_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    equipment_id UUID NOT NULL REFERENCES equipments(id) ON DELETE CASCADE,
+    item_code TEXT NOT NULL,
+    serial_number TEXT,
+    asset_number TEXT,
+    status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'borrowed', 'maintenance', 'retired')),
+    note TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -30,6 +45,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     display_name TEXT NOT NULL,
     department TEXT NOT NULL,
     equipment_id UUID NOT NULL REFERENCES equipments(id) ON DELETE RESTRICT,
+    item_id UUID REFERENCES equipment_items(id) ON DELETE SET NULL,
+    serial_number TEXT,
+    asset_number TEXT,
     borrow_date DATE NOT NULL DEFAULT CURRENT_DATE,
     return_date DATE,
     status transaction_status NOT NULL DEFAULT 'borrowed',
@@ -43,25 +61,47 @@ CREATE TABLE IF NOT EXISTS transactions (
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS time_slot TEXT;
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS purpose TEXT;
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS internal_phone TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS item_id UUID REFERENCES equipment_items(id) ON DELETE SET NULL;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS serial_number TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS asset_number TEXT;
 
 -- 5. Create Indexes for High Performance Lookups
 CREATE INDEX IF NOT EXISTS idx_equipments_available_stock ON equipments(available_stock);
+CREATE INDEX IF NOT EXISTS idx_equipment_items_equipment_id ON equipment_items(equipment_id);
+CREATE INDEX IF NOT EXISTS idx_equipment_items_status ON equipment_items(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_line_user_id ON transactions(line_user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_equipment_id ON transactions(equipment_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_item_id ON transactions(item_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
 
 -- 6. Enable Row Level Security (RLS)
 ALTER TABLE equipments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE equipment_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 
 -- 7. Define RLS Policies
--- Allow public anon read access to equipments so LIFF frontend can show available items
+-- Allow public anon read access to equipments and equipment_items so LIFF frontend can show available items
 DROP POLICY IF EXISTS "Public users can view equipments" ON equipments;
 CREATE POLICY "Public users can view equipments"
     ON equipments
     FOR SELECT
     TO anon, authenticated
     USING (true);
+
+DROP POLICY IF EXISTS "Public users can view equipment_items" ON equipment_items;
+CREATE POLICY "Public users can view equipment_items"
+    ON equipment_items
+    FOR SELECT
+    TO anon, authenticated
+    USING (true);
+
+DROP POLICY IF EXISTS "Service role manages equipment_items" ON equipment_items;
+CREATE POLICY "Service role manages equipment_items"
+    ON equipment_items
+    FOR ALL
+    TO anon, authenticated, service_role
+    USING (true)
+    WITH CHECK (true);
 
 -- Equipments insert/update/delete (managed via service_role or server-side API with admin auth)
 DROP POLICY IF EXISTS "Service role manages equipments" ON equipments;

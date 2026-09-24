@@ -1,12 +1,26 @@
 export type TransactionStatus = "borrowed" | "returned";
+export type ItemStatus = "available" | "borrowed" | "maintenance" | "retired";
+
+export interface EquipmentItem {
+  id: string;
+  equipment_id: string;
+  item_code: string;
+  serial_number: string | null;
+  asset_number: string | null;
+  status: ItemStatus;
+  note?: string | null;
+  created_at?: string;
+}
 
 export interface Equipment {
   id: string;
   name: string;
+  category?: string | null;
   image_url: string | null;
   total_stock: number;
   available_stock: number;
   created_at?: string;
+  items?: EquipmentItem[];
 }
 
 export interface Transaction {
@@ -15,6 +29,9 @@ export interface Transaction {
   display_name: string;
   department: string;
   equipment_id: string;
+  item_id?: string | null;
+  serial_number?: string | null;
+  asset_number?: string | null;
   borrow_date: string;
   return_date: string | null;
   status: TransactionStatus;
@@ -23,6 +40,7 @@ export interface Transaction {
   internal_phone?: string;
   created_at?: string;
   equipments?: Equipment;
+  equipment_items?: EquipmentItem;
 }
 
 export interface BorrowRequestPayload {
@@ -30,6 +48,7 @@ export interface BorrowRequestPayload {
   display_name: string;
   department: string;
   equipment_id: string;
+  item_id?: string | null;
   borrow_date: string;
   time_slot?: string;
   purpose?: string;

@@ -12,7 +12,7 @@ function sanitizeInput(val: any, maxLength = 100): string {
     .slice(0, maxLength);
 }
 
-// GET: ดึงรายการอุปกรณ์ทั้งหมด (Admin view)
+// GET: ดึงรายการอุปกรณ์ทั้งหมด (Admin view) พร้อมรายการเครื่องย่อย
 export async function GET(request: Request) {
   try {
     const { data, error } = await supabaseAdmin
@@ -28,9 +28,26 @@ export async function GET(request: Request) {
       );
     }
 
+    let equipmentsWithItems = data || [];
+    try {
+      const { data: itemsData } = await supabaseAdmin
+        .from("equipment_items")
+        .select("*")
+        .order("item_code", { ascending: true });
+
+      if (itemsData && itemsData.length > 0) {
+        equipmentsWithItems = equipmentsWithItems.map((eq) => ({
+          ...eq,
+          items: itemsData.filter((i) => i.equipment_id === eq.id),
+        }));
+      }
+    } catch {
+      // Table may not exist yet if migration is pending
+    }
+
     return NextResponse.json({
       success: true,
-      equipments: data || [],
+      equipments: equipmentsWithItems,
     });
   } catch (error: any) {
     console.error("[API/Admin/Equipments/GET] Unexpected error:", error);
@@ -52,9 +69,10 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { name, image_url, total_stock } = body;
+    const { name, category, image_url, total_stock } = body;
 
     const cleanName = sanitizeInput(name, 100);
+    const cleanCategory = category ? sanitizeInput(category, 50) : "โน้ตบุ๊ก";
     const cleanImageUrl = image_url ? String(image_url).trim().slice(0, 500) : null;
 
     if (!cleanName) {
@@ -72,8 +90,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const newRecord = {
+    const newRecord: any = {
       name: cleanName,
+      category: cleanCategory,
       image_url: cleanImageUrl,
       total_stock: stockNumber,
       available_stock: stockNumber,
@@ -118,10 +137,11 @@ export async function PUT(request: Request) {
 
   try {
     const body = await request.json();
-    const { id, name, image_url, total_stock } = body;
+    const { id, name, category, image_url, total_stock } = body;
 
     const cleanId = sanitizeInput(id, 64);
     const cleanName = sanitizeInput(name, 100);
+    const cleanCategory = category ? sanitizeInput(category, 50) : null;
     const cleanImageUrl = image_url ? String(image_url).trim().slice(0, 500) : null;
 
     if (!cleanId) {
@@ -174,12 +194,15 @@ export async function PUT(request: Request) {
 
     const newAvailableStock = newTotalStock - borrowedCount;
 
-    const updatePayload = {
+    const updatePayload: any = {
       name: cleanName,
       image_url: cleanImageUrl,
       total_stock: newTotalStock,
       available_stock: newAvailableStock,
     };
+    if (cleanCategory) {
+      updatePayload.category = cleanCategory;
+    }
 
     const { data, error } = await supabaseAdmin
       .from("equipments")

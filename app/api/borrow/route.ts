@@ -38,6 +38,7 @@ export async function POST(request: Request) {
       display_name,
       department,
       equipment_id,
+      item_id,
       borrow_date,
       time_slot,
       purpose,
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
     const cleanDisplayName = sanitizeString(display_name, 100);
     const cleanDepartment = sanitizeString(department, 100);
     const cleanEquipmentId = sanitizeString(equipment_id, 64);
+    const cleanItemId = sanitizeString(item_id, 64);
     const cleanBorrowDate = sanitizeString(borrow_date, 20);
     const cleanTimeSlot = sanitizeString(time_slot, 100);
     const cleanPurpose = sanitizeString(purpose, 250);
@@ -78,32 +80,54 @@ export async function POST(request: Request) {
       );
     }
 
-    let equipmentName = "IT Equipment";
-    let transactionId = "";
+    // ตรวจสอบเครื่องย่อย (Serialized Item) ถ้ามีการเลือกเครื่องเฉพาะ
+    let itemDetail: any = null;
+    if (cleanItemId) {
+      const { data: itemData, error: itemErr } = await supabaseAdmin
+        .from("equipment_items")
+        .select("id, item_code, serial_number, asset_number, status")
+        .eq("id", cleanItemId)
+        .eq("equipment_id", cleanEquipmentId)
+        .single();
 
-    // 3. ทำรายการยืมผ่าน PostgreSQL Atomic Function ก่อน (ป้องกัน Race Condition / แย่งสต็อก)
-    const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc("borrow_equipment_atomic", {
-      p_line_user_id: cleanLineUserId,
-      p_display_name: cleanDisplayName,
-      p_department: cleanDepartment,
-      p_equipment_id: cleanEquipmentId,
-      p_borrow_date: cleanBorrowDate,
-    });
-
-    if (rpcError) {
-      if (rpcError.message.includes("Equipment is out of stock")) {
+      if (itemErr || !itemData) {
         return NextResponse.json(
-          { success: false, error: "อุปกรณ์ที่เลือกถูกยืมหมดแล้ว" },
+          { success: false, error: "ไม่พบข้อมูลเครื่องที่เลือก" },
+          { status: 404 }
+        );
+      }
+      if (itemData.status !== "available") {
+        return NextResponse.json(
+          { success: false, error: `ขออภัย '${itemData.item_code}' ถูกยืมหรือไม่อยู่ในสถานะพร้อมยืมแล้ว` },
           { status: 400 }
         );
       }
+      itemDetail = itemData;
+    }
 
-      console.warn(
-        "[API/Borrow] Atomic RPC failed or not installed. Falling back to direct service_role queries:",
-        rpcError.message
-      );
+    let equipmentName = "IT Equipment";
+    let transactionId = "";
 
-      // Fallback: ดึงข้อมูลอุปกรณ์และตรวจสอบสต็อก
+    // 3. ทำรายการยืม
+    // กรณีที่ไม่ได้เลือกเครื่องเฉพาะ ให้ลองใช้ PostgreSQL Atomic Function ก่อน
+    let rpcSuccess = false;
+    let rpcData: any = null;
+    if (!itemDetail) {
+      const res = await supabaseAdmin.rpc("borrow_equipment_atomic", {
+        p_line_user_id: cleanLineUserId,
+        p_display_name: cleanDisplayName,
+        p_department: cleanDepartment,
+        p_equipment_id: cleanEquipmentId,
+        p_borrow_date: cleanBorrowDate,
+      });
+      rpcData = res.data;
+      if (!res.error && rpcData?.success) {
+        rpcSuccess = true;
+      }
+    }
+
+    if (!rpcSuccess) {
+      // Direct query execution (หรือกรณีเลือกเครื่องเฉพาะตัว)
       const { data: equipment, error: fetchErr } = await supabaseAdmin
         .from("equipments")
         .select("id, name, available_stock")
@@ -129,7 +153,7 @@ export async function POST(request: Request) {
       // หักสต็อกอุปกรณ์ (-1)
       const { error: updateErr } = await supabaseAdmin
         .from("equipments")
-        .update({ available_stock: equipment.available_stock - 1 })
+        .update({ available_stock: Math.max(0, equipment.available_stock - 1) })
         .eq("id", cleanEquipmentId);
 
       if (updateErr) {
@@ -137,6 +161,14 @@ export async function POST(request: Request) {
           { success: false, error: `ไม่สามารถอัปเดตสต็อกได้: ${updateErr.message}` },
           { status: 500 }
         );
+      }
+
+      // ปรับสถานะเครื่องย่อยเป็น 'borrowed'
+      if (itemDetail) {
+        await supabaseAdmin
+          .from("equipment_items")
+          .update({ status: "borrowed" })
+          .eq("id", itemDetail.id);
       }
 
       // บันทึกรายการยืมลงตาราง transactions
@@ -151,6 +183,11 @@ export async function POST(request: Request) {
       if (cleanTimeSlot) insertRecord.time_slot = cleanTimeSlot;
       if (cleanPurpose) insertRecord.purpose = cleanPurpose;
       if (cleanInternalPhone) insertRecord.internal_phone = cleanInternalPhone;
+      if (itemDetail) {
+        insertRecord.item_id = itemDetail.id;
+        insertRecord.serial_number = itemDetail.serial_number;
+        insertRecord.asset_number = itemDetail.asset_number;
+      }
 
       let { data: txData, error: insertErr } = await supabaseAdmin
         .from("transactions")
@@ -212,8 +249,11 @@ export async function POST(request: Request) {
     const timeSlotText = cleanTimeSlot || "เต็มวัน (08:30 - 16:30 น.)";
     const purposeText = cleanPurpose || "ใช้งานทั่วไปในโรงพยาบาล";
     const phoneText = cleanInternalPhone ? ` (เบอร์ต่อ: ${cleanInternalPhone})` : "";
+    const itemInfoText = itemDetail
+      ? `\nเครื่องที่ยืม: ${itemDetail.item_code}${itemDetail.serial_number ? ` (S/N: ${itemDetail.serial_number})` : ""}${itemDetail.asset_number ? ` (พัสดุ: ${itemDetail.asset_number})` : ""}`
+      : "";
 
-    const formattedMessage = `🔔 มีรายการขอยืมอุปกรณ์ IT ใหม่!\nผู้ยืม: ${cleanDisplayName}\nแผนก: ${cleanDepartment}${phoneText}\nอุปกรณ์: ${equipmentName}\nวันที่: ${borrowDateFormatted(cleanBorrowDate)}\nช่วงเวลา: ${timeSlotText}\nวัตถุประสงค์: ${purposeText}`;
+    const formattedMessage = `🔔 มีรายการขอยืมอุปกรณ์ IT ใหม่!\nผู้ยืม: ${cleanDisplayName}\nแผนก: ${cleanDepartment}${phoneText}\nอุปกรณ์: ${equipmentName}${itemInfoText}\nวันที่: ${borrowDateFormatted(cleanBorrowDate)}\nช่วงเวลา: ${timeSlotText}\nวัตถุประสงค์: ${purposeText}`;
 
     // A. LINE Messaging API
     if (messagingToken && messagingToken !== "your-channel-access-token-here") {
