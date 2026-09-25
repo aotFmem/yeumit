@@ -9,7 +9,6 @@ import {
   Building2,
   User,
   CheckCircle2,
-  AlertCircle,
   Loader2,
   Lock,
   ExternalLink,
@@ -21,20 +20,15 @@ import {
   PackageCheck,
   Clock,
   CheckCircle,
-  BarChart3,
   Shield,
-  KeyRound,
   X,
-  ShieldCheck,
-  Users,
   QrCode,
   Tag,
-  Hash,
 } from "lucide-react";
 import liff from "@line/liff";
 import { initializeLiff, closeLiff } from "@/lib/liff";
 import { supabase } from "@/lib/supabaseClient";
-import { Equipment, EquipmentItem, UserProfile, Transaction } from "@/lib/types";
+import { Equipment, UserProfile, Transaction } from "@/lib/types";
 import QrScannerModal from "@/components/QrScannerModal";
 
 const HOSPITAL_DEPARTMENTS = [

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isRequestAdminAuthorized } from "@/lib/adminAuth";
-import { Equipment } from "@/lib/types";
 
 // Helper สำหรับ Sanitize ข้อความ
 function sanitizeInput(val: any, maxLength = 100): string {

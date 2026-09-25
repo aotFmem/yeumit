@@ -98,6 +98,17 @@ export async function POST(request: Request) {
       );
     }
 
+    const VALID_ITEM_STATUSES = ["available", "borrowed", "maintenance", "retired"];
+    if (status && !VALID_ITEM_STATUSES.includes(status)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "สถานะของเครื่องไม่ถูกต้อง (ต้องเป็น available, borrowed, maintenance หรือ retired)",
+        },
+        { status: 400 }
+      );
+    }
+
     const newRecord = {
       equipment_id,
       item_code: cleanCode,
@@ -172,6 +183,16 @@ export async function PUT(request: Request) {
     };
 
     if (status) {
+      const VALID_ITEM_STATUSES = ["available", "borrowed", "maintenance", "retired"];
+      if (!VALID_ITEM_STATUSES.includes(status)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "สถานะของเครื่องไม่ถูกต้อง (ต้องเป็น available, borrowed, maintenance หรือ retired)",
+          },
+          { status: 400 }
+        );
+      }
       updatePayload.status = status;
     }
 

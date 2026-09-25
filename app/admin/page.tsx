@@ -29,9 +29,6 @@ import {
   Download,
   Printer,
   Tag,
-  Hash,
-  Wrench,
-  ShieldAlert,
 } from "lucide-react";
 import liff from "@line/liff";
 import QRCode from "qrcode";

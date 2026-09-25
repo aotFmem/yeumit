@@ -76,6 +76,7 @@ export interface UserProfile {
 export interface EquipmentFormData {
   id?: string;
   name: string;
+  category?: string;
   image_url: string;
   total_stock: number;
 }
